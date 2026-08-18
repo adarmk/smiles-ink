@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { makeSmilesCandidates, splitSmilesInput } from "./smiles-cleanup";
@@ -78,11 +79,21 @@ type PointerAction =
       direction: ResizeDirection;
       startX: number;
       startY: number;
-      x: number;
-      y: number;
       width: number;
       height: number;
       ratio: number;
+      rotation: number;
+      anchorX: number;
+      anchorY: number;
+    }
+  | {
+      kind: "rotate";
+      id: string;
+      pointerId: number;
+      centerX: number;
+      centerY: number;
+      lastAngle: number;
+      rotation: number;
     };
 
 declare global {
@@ -148,6 +159,39 @@ function loadRDKit(): Promise<RDKitModule> {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum);
+}
+
+function angleFromCenter(
+  clientX: number,
+  clientY: number,
+  centerX: number,
+  centerY: number,
+) {
+  return (Math.atan2(clientY - centerY, clientX - centerX) * 180) / Math.PI;
+}
+
+function shortestAngleDelta(delta: number) {
+  return ((delta + 540) % 360) - 180;
+}
+
+function rotateVector(x: number, y: number, degrees: number) {
+  const radians = (degrees * Math.PI) / 180;
+  return {
+    x: x * Math.cos(radians) - y * Math.sin(radians),
+    y: x * Math.sin(radians) + y * Math.cos(radians),
+  };
+}
+
+function resizeCursor(direction: ResizeDirection, rotation: number) {
+  const baseAngle = direction === "nw" || direction === "se" ? 45 : 135;
+  const angle = ((baseAngle + rotation) % 180 + 180) % 180;
+  const cursors = [
+    "ew-resize",
+    "nwse-resize",
+    "ns-resize",
+    "nesw-resize",
+  ] as const;
+  return cursors[Math.round(angle / 45) % cursors.length];
 }
 
 function isTextEditingTarget(target: EventTarget | null) {
@@ -493,7 +537,13 @@ export default function Home() {
   ) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
-    if (target.closest("button") || target.closest(".resize-handle")) return;
+    if (
+      target.closest("button") ||
+      target.closest(".selection-toolbar") ||
+      target.closest(".resize-handle") ||
+      target.closest(".rotation-handle")
+    )
+      return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     bringForward(molecule.id);
@@ -519,6 +569,13 @@ export default function Home() {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     bringForward(molecule.id);
+    const signX = direction.includes("e") ? 1 : -1;
+    const signY = direction.includes("s") ? 1 : -1;
+    const oppositeCorner = rotateVector(
+      (-signX * molecule.width) / 2,
+      (-signY * molecule.height) / 2,
+      molecule.rotation,
+    );
     pointerActionRef.current = {
       kind: "resize",
       id: molecule.id,
@@ -526,12 +583,62 @@ export default function Home() {
       direction,
       startX: event.clientX,
       startY: event.clientY,
-      x: molecule.x,
-      y: molecule.y,
       width: molecule.width,
       height: molecule.height,
       ratio: molecule.width / molecule.height,
+      rotation: molecule.rotation,
+      anchorX: molecule.x + molecule.width / 2 + oppositeCorner.x,
+      anchorY: molecule.y + molecule.height / 2 + oppositeCorner.y,
     };
+  };
+
+  const startRotation = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    molecule: MoleculeItem,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const moleculeElement = event.currentTarget.closest<HTMLElement>(
+      ".molecule-item",
+    );
+    if (!moleculeElement) return;
+
+    const bounds = moleculeElement.getBoundingClientRect();
+    const centerX = bounds.left + bounds.width / 2;
+    const centerY = bounds.top + bounds.height / 2;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    bringForward(molecule.id);
+    pointerActionRef.current = {
+      kind: "rotate",
+      id: molecule.id,
+      pointerId: event.pointerId,
+      centerX,
+      centerY,
+      lastAngle: angleFromCenter(
+        event.clientX,
+        event.clientY,
+        centerX,
+        centerY,
+      ),
+      rotation: molecule.rotation,
+    };
+  };
+
+  const rotateWithKeyboard = (
+    event: ReactKeyboardEvent<HTMLSpanElement>,
+    molecule: MoleculeItem,
+  ) => {
+    const direction =
+      event.key === "ArrowLeft" || event.key === "ArrowDown"
+        ? -1
+        : event.key === "ArrowRight" || event.key === "ArrowUp"
+          ? 1
+          : 0;
+    if (!direction && event.key !== "Home") return;
+    event.preventDefault();
+    updateMolecule(molecule.id, {
+      rotation: event.key === "Home" ? 0 : molecule.rotation + direction * 15,
+    });
   };
 
   const finishPointerAction = useCallback((pointerId?: number) => {
@@ -568,6 +675,26 @@ export default function Home() {
       return;
     }
 
+    if (action.kind === "rotate") {
+      const currentAngle = angleFromCenter(
+        event.clientX,
+        event.clientY,
+        action.centerX,
+        action.centerY,
+      );
+      const rotation =
+        action.rotation + shortestAngleDelta(currentAngle - action.lastAngle);
+      pointerActionRef.current = {
+        ...action,
+        lastAngle: currentAngle,
+        rotation,
+      };
+      updateMolecule(action.id, {
+        rotation: event.shiftKey ? Math.round(rotation / 15) * 15 : rotation,
+      });
+      return;
+    }
+
     const deltaX = event.clientX - action.startX;
     const deltaY = event.clientY - action.startY;
 
@@ -587,23 +714,29 @@ export default function Home() {
       return;
     }
 
-    const growsRight = action.direction.includes("e");
-    const widthDelta = growsRight ? deltaX : -deltaX;
+    const signX = action.direction.includes("e") ? 1 : -1;
+    const signY = action.direction.includes("s") ? 1 : -1;
+    const localDelta = rotateVector(deltaX, deltaY, -action.rotation);
+    const projectedWidthFromX = action.width + localDelta.x * signX;
     const projectedWidthFromY =
-      action.width + (action.direction.includes("s") ? deltaY : -deltaY) * action.ratio;
-    const projectedWidthFromX = action.width + widthDelta;
+      action.width + localDelta.y * signY * action.ratio;
     const width = clamp(
-      Math.abs(widthDelta) > Math.abs(deltaY)
+      Math.abs(localDelta.x) > Math.abs(localDelta.y)
         ? projectedWidthFromX
         : projectedWidthFromY,
       220,
       820,
     );
     const height = width / action.ratio;
-    const x = growsRight ? action.x : action.x + action.width - width;
-    const y = action.direction.includes("s")
-      ? action.y
-      : action.y + action.height - height;
+    const centerOffset = rotateVector(
+      (signX * width) / 2,
+      (signY * height) / 2,
+      action.rotation,
+    );
+    const centerX = action.anchorX + centerOffset.x;
+    const centerY = action.anchorY + centerOffset.y;
+    const x = centerX - width / 2;
+    const y = centerY - height / 2;
 
     updateMolecule(action.id, { x, y, width, height });
   };
@@ -651,17 +784,6 @@ export default function Home() {
               <kbd aria-hidden="true">⌘X</kbd>
             </button>
           )}
-          <div
-            className={`renderer-status renderer-status--${rendererStatus}`}
-            aria-live="polite"
-          >
-            <span className="status-dot" aria-hidden="true" />
-            {rendererStatus === "loading"
-              ? "Starting locally"
-              : rendererStatus === "ready"
-                ? "RDKit · local"
-                : "Renderer offline"}
-          </div>
         </div>
       </header>
 
@@ -686,6 +808,14 @@ export default function Home() {
 
         {molecules.map((molecule) => {
           const isSelected = selectedId === molecule.id;
+          const displayedRotation =
+            ((Math.round(molecule.rotation) % 360) + 360) % 360;
+          const radians = (molecule.rotation * Math.PI) / 180;
+          const rotatedHeight =
+            Math.abs(molecule.width * Math.sin(radians)) +
+            Math.abs(molecule.height * Math.cos(radians));
+          const toolbarTop = (molecule.height - rotatedHeight) / 2 - 48;
+          const labelTop = (molecule.height + rotatedHeight) / 2 + 10;
           return (
             <div
               className={`molecule-item${isSelected ? " is-selected" : ""}`}
@@ -708,45 +838,76 @@ export default function Home() {
               }
             >
               <div
-                className="molecule-art"
+                className="molecule-transform"
                 style={{ transform: `rotate(${molecule.rotation}deg)` }}
               >
-                <div
-                  className="molecule-svg"
-                  dangerouslySetInnerHTML={{ __html: molecule.svg }}
-                />
+                <div className="molecule-art">
+                  <div
+                    className="molecule-svg"
+                    dangerouslySetInnerHTML={{ __html: molecule.svg }}
+                  />
+                </div>
+
+                {isSelected && (
+                  <>
+                    {(["nw", "ne", "sw", "se"] as ResizeDirection[]).map(
+                      (direction) => (
+                        <span
+                          className={`resize-handle resize-handle--${direction}`}
+                          key={direction}
+                          role="presentation"
+                          style={{
+                            cursor: resizeCursor(direction, molecule.rotation),
+                          }}
+                          onPointerDown={(event) =>
+                            startResize(event, molecule, direction)
+                          }
+                          onLostPointerCapture={(event) =>
+                            finishPointerAction(event.pointerId)
+                          }
+                        />
+                      ),
+                    )}
+                    <span
+                      className="rotation-handle"
+                      role="presentation"
+                      aria-hidden="true"
+                      title="Drag to rotate · hold Shift to snap"
+                      onPointerDown={(event) =>
+                        startRotation(event, molecule)
+                      }
+                      onLostPointerCapture={(event) =>
+                        finishPointerAction(event.pointerId)
+                      }
+                    />
+                  </>
+                )}
               </div>
 
               {isSelected && (
                 <>
-                  <div className="selection-toolbar" role="toolbar" aria-label="Molecule controls">
-                    <button
-                      type="button"
-                      title="Rotate left 15°"
-                      aria-label="Rotate left 15 degrees"
-                      onClick={() =>
-                        updateMolecule(molecule.id, {
-                          rotation: molecule.rotation - 15,
-                        })
+                  <div
+                    className="selection-toolbar"
+                    role="toolbar"
+                    aria-label="Molecule controls"
+                    style={{ top: toolbarTop }}
+                  >
+                    <span
+                      className="rotation-value"
+                      role="slider"
+                      tabIndex={0}
+                      aria-label="Molecule rotation"
+                      aria-valuemin={0}
+                      aria-valuemax={359}
+                      aria-valuenow={displayedRotation}
+                      aria-valuetext={`${displayedRotation} degrees`}
+                      title="Rotation · use arrow keys or drag the rotation handle"
+                      onKeyDown={(event) =>
+                        rotateWithKeyboard(event, molecule)
                       }
                     >
-                      ↶
-                    </button>
-                    <span className="rotation-value">
-                      {((molecule.rotation % 360) + 360) % 360}°
+                      {displayedRotation}°
                     </span>
-                    <button
-                      type="button"
-                      title="Rotate right 15°"
-                      aria-label="Rotate right 15 degrees"
-                      onClick={() =>
-                        updateMolecule(molecule.id, {
-                          rotation: molecule.rotation + 15,
-                        })
-                      }
-                    >
-                      ↷
-                    </button>
                     <span className="toolbar-divider" aria-hidden="true" />
                     <button
                       className="delete-button"
@@ -759,22 +920,11 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {(["nw", "ne", "sw", "se"] as ResizeDirection[]).map(
-                    (direction) => (
-                      <span
-                        className={`resize-handle resize-handle--${direction}`}
-                        key={direction}
-                        role="presentation"
-                        onPointerDown={(event) =>
-                          startResize(event, molecule, direction)
-                        }
-                        onLostPointerCapture={(event) =>
-                          finishPointerAction(event.pointerId)
-                        }
-                      />
-                    ),
-                  )}
-                  <div className="smiles-label" title={molecule.canonicalSmiles}>
+                  <div
+                    className="smiles-label"
+                    title={molecule.canonicalSmiles}
+                    style={{ top: labelTop }}
+                  >
                     {molecule.canonicalSmiles}
                   </div>
                 </>
@@ -839,7 +989,7 @@ export default function Home() {
       )}
 
       <div className="canvas-help" aria-hidden="true">
-        Drag to move&nbsp;&nbsp;·&nbsp;&nbsp;Corners to resize&nbsp;&nbsp;·&nbsp;&nbsp;Delete to remove&nbsp;&nbsp;·&nbsp;&nbsp;⌘X to clear
+        Drag to move&nbsp;&nbsp;·&nbsp;&nbsp;Corners resize&nbsp;&nbsp;·&nbsp;&nbsp;Arc handle rotates&nbsp;&nbsp;·&nbsp;&nbsp;Delete removes&nbsp;&nbsp;·&nbsp;&nbsp;⌘X clears
       </div>
     </main>
   );

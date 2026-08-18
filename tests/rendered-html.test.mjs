@@ -34,6 +34,7 @@ test("server-renders the Drawchem canvas", async () => {
   assert.match(html, /SMILES canvas/i);
   assert.match(html, /Switch to dark mode/i);
   assert.match(html, /drawchem-theme/i);
+  assert.doesNotMatch(html, /RDKit · local/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
@@ -54,7 +55,14 @@ test("includes the requested canvas interactions", async () => {
 
   assert.match(source, /startDrag/);
   assert.match(source, /startResize/);
-  assert.match(source, /rotation: molecule\.rotation \+ 15/);
+  assert.match(source, /startRotation/);
+  assert.match(source, /shortestAngleDelta/);
+  assert.match(source, /rotateVector/);
+  assert.match(source, /anchorX/);
+  assert.match(source, /className="molecule-transform"/);
+  assert.match(source, /direction \* 15/);
+  assert.match(source, /rotation-handle/);
+  assert.doesNotMatch(source, /Rotate left 15|Rotate right 15/);
   assert.match(source, /removeMolecule/);
   assert.match(source, /window\.addEventListener\("paste"/);
   assert.match(source, /prefer_coordgen\(true\)/);
