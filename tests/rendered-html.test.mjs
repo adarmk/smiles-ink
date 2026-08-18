@@ -32,6 +32,8 @@ test("server-renders the Drawchem canvas", async () => {
   assert.match(html, /<title>Drawchem — SMILES canvas<\/title>/i);
   assert.match(html, /Paste a SMILES string/i);
   assert.match(html, /SMILES canvas/i);
+  assert.match(html, /Switch to dark mode/i);
+  assert.match(html, /drawchem-theme/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
@@ -59,6 +61,11 @@ test("includes the requested canvas interactions", async () => {
   assert.match(source, /event\.metaKey \|\| event\.ctrlKey/);
   assert.match(source, /event\.key\.toLowerCase\(\) === "x"/);
   assert.match(source, /padding: 0\.025/);
+  assert.match(source, /window\.addEventListener\("pointerup"/);
+  assert.match(source, /window\.addEventListener\("pointercancel"/);
+  assert.match(source, /event\.buttons === 0/);
+  assert.match(source, /localStorage\.setItem\(THEME_STORAGE_KEY/);
+  assert.match(source, /prefers-color-scheme: dark/);
 });
 
 test("repairs common pasted SMILES formatting without changing chemistry", async () => {

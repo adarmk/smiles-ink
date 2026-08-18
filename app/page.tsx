@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { makeSmilesCandidates, splitSmilesInput } from "./smiles-cleanup";
@@ -24,6 +25,39 @@ type MoleculeItem = {
 };
 
 type ResizeDirection = "nw" | "ne" | "sw" | "se";
+type Theme = "light" | "dark";
+
+const THEME_STORAGE_KEY = "drawchem-theme";
+const THEME_CHANGE_EVENT = "drawchem:theme-change";
+
+function getThemeSnapshot(): Theme {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function getServerThemeSnapshot(): Theme {
+  return "light";
+}
+
+function subscribeToTheme(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const handleThemeChange = () => onStoreChange();
+  const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+    try {
+      if (localStorage.getItem(THEME_STORAGE_KEY)) return;
+    } catch {
+      // Continue following the system theme when storage is unavailable.
+    }
+    document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+    onStoreChange();
+  };
+
+  window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+  mediaQuery.addEventListener("change", handleSystemThemeChange);
+  return () => {
+    window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    mediaQuery.removeEventListener("change", handleSystemThemeChange);
+  };
+}
 
 type PointerAction =
   | {
@@ -195,6 +229,11 @@ export default function Home() {
   const [molecules, setMolecules] = useState<MoleculeItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const theme = useSyncExternalStore(
+    subscribeToTheme,
+    getThemeSnapshot,
+    getServerThemeSnapshot,
+  );
   const [rendererStatus, setRendererStatus] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -214,6 +253,17 @@ export default function Home() {
     },
     [],
   );
+
+  const toggleTheme = useCallback(() => {
+    const nextTheme: Theme = getThemeSnapshot() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = nextTheme;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // The selected theme still applies for this session.
+    }
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -484,9 +534,39 @@ export default function Home() {
     };
   };
 
+  const finishPointerAction = useCallback((pointerId?: number) => {
+    const action = pointerActionRef.current;
+    if (action && (pointerId === undefined || action.pointerId === pointerId)) {
+      pointerActionRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePointerEnd = (event: PointerEvent) => {
+      finishPointerAction(event.pointerId);
+    };
+    const handleWindowBlur = () => finishPointerAction();
+
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [finishPointerAction]);
+
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const action = pointerActionRef.current;
     if (!action || action.pointerId !== event.pointerId) return;
+
+    // Pointer capture can occasionally be lost during a React re-render. A
+    // mouse move with no pressed buttons must never continue an old gesture.
+    if (event.pointerType === "mouse" && event.buttons === 0) {
+      finishPointerAction(event.pointerId);
+      return;
+    }
 
     const deltaX = event.clientX - action.startX;
     const deltaY = event.clientY - action.startY;
@@ -528,12 +608,6 @@ export default function Home() {
     updateMolecule(action.id, { x, y, width, height });
   };
 
-  const finishPointerAction = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (pointerActionRef.current?.pointerId === event.pointerId) {
-      pointerActionRef.current = null;
-    }
-  };
-
   const handleInputPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = event.clipboardData.getData("text").trim();
     if (!pasted) return;
@@ -555,6 +629,16 @@ export default function Home() {
         </div>
 
         <div className="topbar-actions">
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "dark"}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+          </button>
           {molecules.length > 0 && (
             <button
               className="clear-button"
@@ -617,8 +701,11 @@ export default function Home() {
               aria-label={`Molecule ${molecule.canonicalSmiles}`}
               onPointerDown={(event) => startDrag(event, molecule)}
               onPointerMove={handlePointerMove}
-              onPointerUp={finishPointerAction}
-              onPointerCancel={finishPointerAction}
+              onPointerUp={(event) => finishPointerAction(event.pointerId)}
+              onPointerCancel={(event) => finishPointerAction(event.pointerId)}
+              onLostPointerCapture={(event) =>
+                finishPointerAction(event.pointerId)
+              }
             >
               <div
                 className="molecule-art"
@@ -680,6 +767,9 @@ export default function Home() {
                         role="presentation"
                         onPointerDown={(event) =>
                           startResize(event, molecule, direction)
+                        }
+                        onLostPointerCapture={(event) =>
+                          finishPointerAction(event.pointerId)
                         }
                       />
                     ),

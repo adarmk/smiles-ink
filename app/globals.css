@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
   --paper: #f5f4ef;
   --ink: #171915;
   --muted: #72756c;
@@ -9,6 +10,18 @@
   --blue-soft: #edf1ff;
   --green: #4e8b6a;
   --red: #b24b43;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #11130f;
+  --ink: #eef1ea;
+  --muted: #9aa096;
+  --line: rgba(234, 240, 230, 0.14);
+  --blue: #82a1ff;
+  --blue-soft: #1c274b;
+  --green: #76c795;
+  --red: #ef8178;
 }
 
 * {
@@ -160,6 +173,32 @@ button {
 
 .topbar-actions {
   gap: 10px;
+}
+
+.theme-toggle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(27, 31, 25, 0.11);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #686b64;
+  cursor: pointer;
+  place-items: center;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.theme-toggle span {
+  font-size: 17px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.theme-toggle:hover {
+  background: rgba(27, 31, 25, 0.06);
+  color: var(--ink);
+  transform: translateY(-1px);
 }
 
 .clear-button {
@@ -343,6 +382,10 @@ button {
 .molecule-svg svg {
   width: 100%;
   height: 100%;
+}
+
+.molecule-svg {
+  transition: filter 180ms ease;
 }
 
 .molecule-svg svg {
@@ -601,6 +644,159 @@ button {
   font-size: 8px;
   letter-spacing: 0.09em;
   opacity: 0.77;
+}
+
+html[data-theme="dark"] ::selection {
+  background: #344c83;
+}
+
+html[data-theme="dark"] .app-shell {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(65, 72, 59, 0.28), transparent 48%),
+    var(--paper);
+}
+
+html[data-theme="dark"] .app-shell::before {
+  background-image: radial-gradient(circle, rgba(214, 223, 207, 0.14) 0.7px, transparent 0.8px);
+  opacity: 0.5;
+}
+
+html[data-theme="dark"] .topbar {
+  border-bottom-color: rgba(235, 240, 230, 0.09);
+  background: rgba(17, 19, 15, 0.82);
+}
+
+html[data-theme="dark"] .theme-toggle,
+html[data-theme="dark"] .renderer-status {
+  border-color: var(--line);
+  background: rgba(42, 46, 38, 0.72);
+  color: #b6bcb2;
+}
+
+html[data-theme="dark"] .theme-toggle:hover,
+html[data-theme="dark"] .clear-button:hover {
+  background: rgba(238, 243, 233, 0.08);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .clear-button {
+  color: #b1b7ad;
+}
+
+html[data-theme="dark"] .clear-button kbd {
+  border-color: var(--line);
+  background: rgba(238, 243, 233, 0.06);
+  color: #92998e;
+}
+
+html[data-theme="dark"] .status-dot {
+  background: #686f65;
+}
+
+html[data-theme="dark"] .renderer-status--ready .status-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(118, 199, 149, 0.14);
+}
+
+html[data-theme="dark"] .empty-state {
+  color: #8e958a;
+}
+
+html[data-theme="dark"] .empty-state p {
+  color: #d0d5cc;
+}
+
+html[data-theme="dark"] .molecule-item.is-selected {
+  border-color: rgba(130, 161, 255, 0.82);
+  background: rgba(130, 161, 255, 0.06);
+  box-shadow:
+    0 0 0 1px rgba(238, 243, 233, 0.08) inset,
+    0 14px 38px rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme="dark"] .molecule-svg {
+  filter: invert(0.92) hue-rotate(180deg) saturate(1.08) brightness(1.08);
+}
+
+html[data-theme="dark"] .molecule-item:hover .molecule-art {
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.22));
+}
+
+html[data-theme="dark"] .selection-toolbar {
+  border-color: var(--line);
+  background: rgba(37, 41, 34, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+}
+
+html[data-theme="dark"] .selection-toolbar button:hover {
+  background: #343930;
+}
+
+html[data-theme="dark"] .selection-toolbar .delete-button:hover {
+  background: #442724;
+}
+
+html[data-theme="dark"] .rotation-value,
+html[data-theme="dark"] .smiles-label {
+  color: #a6ada2;
+}
+
+html[data-theme="dark"] .resize-handle {
+  border-color: #1a1d18;
+}
+
+html[data-theme="dark"] .smiles-label {
+  border-color: var(--line);
+  background: rgba(27, 30, 25, 0.94);
+}
+
+html[data-theme="dark"] .smiles-dock {
+  border-color: var(--line);
+  background: rgba(29, 32, 27, 0.94);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.34),
+    0 2px 6px rgba(0, 0, 0, 0.22);
+}
+
+html[data-theme="dark"] .input-plus {
+  border-color: var(--line);
+  color: #a0a79c;
+}
+
+html[data-theme="dark"] .input-row input {
+  color: #edf1e9;
+}
+
+html[data-theme="dark"] .input-row input::placeholder {
+  color: #737a70;
+}
+
+html[data-theme="dark"] .render-button {
+  background: #eef1ea;
+  color: #171915;
+}
+
+html[data-theme="dark"] .render-button:hover:not(:disabled) {
+  background: #fff;
+}
+
+html[data-theme="dark"] .return-symbol {
+  background: rgba(23, 25, 21, 0.1);
+}
+
+html[data-theme="dark"] .notice {
+  border-color: var(--line);
+  background: rgba(37, 41, 34, 0.96);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.32);
+  color: #c9cec5;
+}
+
+html[data-theme="dark"] .notice span {
+  background: #1d3928;
+}
+
+html[data-theme="dark"] .notice--error span {
+  background: #442724;
 }
 
 @keyframes breathe {
