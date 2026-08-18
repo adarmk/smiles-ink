@@ -17,8 +17,8 @@ Cleanup is deliberately conservative: Drawchem only tries mechanical repairs tha
 ## Run locally
 
 ```bash
-pnpm install
-pnpm dev
+bun install
+bun dev
 ```
 
 Then open `http://localhost:3000`.
@@ -26,9 +26,14 @@ Then open `http://localhost:3000`.
 ## Validate
 
 ```bash
-pnpm test
-pnpm lint
+bun run test
+bun run lint
 ```
+
+## Deploy to Cloudflare Workers
+
+Use `bun run build` as the build command and `bun run deploy` as the deploy
+command.
 
 ## Rendering approach
 
