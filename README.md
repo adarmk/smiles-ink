@@ -33,7 +33,8 @@ bun run lint
 ## Deploy to Cloudflare Workers
 
 Use `bun run build` as the build command and `bun run deploy` as the deploy
-command.
+command. The build command installs the locked dependencies first so it also
+works when the host skips automatic dependency installation.
 
 ## Rendering approach
 
