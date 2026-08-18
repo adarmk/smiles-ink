@@ -903,6 +903,18 @@ export default function Home() {
         </div>
 
         <div className="topbar-actions">
+          <a
+            className="x-link"
+            href="https://x.com/adarkahiri"
+            target="_blank"
+            rel="noreferrer"
+            title="@adarkahiri on X"
+            aria-label="Follow @adarkahiri on X"
+          >
+            <span className="x-mark" aria-hidden="true">
+              𝕏
+            </span>
+          </a>
           <button
             className="theme-toggle"
             type="button"
@@ -921,7 +933,10 @@ export default function Home() {
               title="Clear canvas (⌘X)"
               aria-keyshortcuts="Meta+X Control+X"
             >
-              <span>Clear canvas</span>
+              <span className="clear-label">Clear canvas</span>
+              <span className="clear-icon" aria-hidden="true">
+                ×
+              </span>
               <kbd aria-hidden="true">⌘X</kbd>
             </button>
           )}

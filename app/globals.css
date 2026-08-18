@@ -178,7 +178,8 @@ button {
   gap: 10px;
 }
 
-.theme-toggle {
+.theme-toggle,
+.x-link {
   display: grid;
   width: 34px;
   height: 34px;
@@ -192,13 +193,25 @@ button {
   transition: background 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
+.x-link {
+  text-decoration: none;
+}
+
+.x-mark {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .theme-toggle span {
   font-size: 17px;
   line-height: 1;
   transform: translateY(-1px);
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.x-link:hover {
   background: rgba(27, 31, 25, 0.06);
   color: var(--ink);
   transform: translateY(-1px);
@@ -233,6 +246,10 @@ button {
 .clear-button:hover {
   background: rgba(27, 31, 25, 0.06);
   color: var(--ink);
+}
+
+.clear-icon {
+  display: none;
 }
 
 .canvas-stage {
@@ -702,13 +719,15 @@ html[data-theme="dark"] .topbar {
   background: rgba(17, 19, 15, 0.82);
 }
 
-html[data-theme="dark"] .theme-toggle {
+html[data-theme="dark"] .theme-toggle,
+html[data-theme="dark"] .x-link {
   border-color: var(--line);
   background: rgba(42, 46, 38, 0.72);
   color: #b6bcb2;
 }
 
 html[data-theme="dark"] .theme-toggle:hover,
+html[data-theme="dark"] .x-link:hover,
 html[data-theme="dark"] .clear-button:hover {
   background: rgba(238, 243, 233, 0.08);
   color: var(--ink);
@@ -853,18 +872,28 @@ html[data-theme="dark"] .notice--error span {
     gap: 6px;
   }
 
-  .theme-toggle {
+  .theme-toggle,
+  .x-link {
     width: 44px;
     height: 44px;
   }
 
   .clear-button {
-    min-height: 44px;
-    padding: 0 8px;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
   }
 
-  .clear-button kbd {
+  .clear-button kbd,
+  .clear-label {
     display: none;
+  }
+
+  .clear-icon {
+    display: inline;
+    font-size: 20px;
+    line-height: 1;
   }
 
   .smiles-dock {
@@ -1018,19 +1047,29 @@ html[data-theme="dark"] .notice--error span {
     gap: 6px;
   }
 
-  .theme-toggle {
+  .theme-toggle,
+  .x-link {
     width: 44px;
     height: 44px;
   }
 
   .clear-button {
-    min-height: 44px;
-    padding: 0 8px;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
   }
 
   .clear-button kbd,
+  .clear-label,
   .desktop-hint {
     display: none;
+  }
+
+  .clear-icon {
+    display: inline;
+    font-size: 20px;
+    line-height: 1;
   }
 
   .mobile-hint {
