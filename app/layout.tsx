@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 const themeScript = `
@@ -18,6 +18,12 @@ export const metadata: Metadata = {
   title: "Drawchem — SMILES canvas",
   description:
     "A fast, private, fully local canvas for rendering beautiful chemical structures from SMILES.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

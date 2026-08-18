@@ -194,6 +194,44 @@ function resizeCursor(direction: ResizeDirection, rotation: number) {
   return cursors[Math.round(angle / 45) % cursors.length];
 }
 
+function getCanvasBounds(ratio = 1.5) {
+  const stage = document.querySelector<HTMLElement>(".canvas-stage");
+  const dock = document.querySelector<HTMLElement>(".smiles-dock");
+  const stageRect = stage?.getBoundingClientRect();
+  const width = stageRect?.width ?? window.innerWidth;
+  const height = stageRect?.height ?? window.innerHeight;
+  const isCompact = width <= 680 || height <= 500;
+  const sidePadding = isCompact ? 24 : 12;
+  const top = isCompact ? 70 : 48;
+  const dockTop =
+    stageRect && dock
+      ? dock.getBoundingClientRect().top - stageRect.top
+      : height - (isCompact ? 118 : 92);
+  const bottom = Math.max(
+    top + 108,
+    Math.min(height - 12, dockTop - (isCompact ? 42 : 34)),
+  );
+  const minWidth = isCompact ? 160 : 220;
+  const horizontalMaximum = Math.max(minWidth, width - sidePadding * 2);
+  const verticalMaximum = Math.max(minWidth, (bottom - top) * ratio);
+
+  return {
+    left: sidePadding,
+    right: width - sidePadding,
+    top,
+    bottom,
+    minWidth,
+    maxWidth: Math.max(
+      minWidth,
+      Math.min(
+        isCompact ? horizontalMaximum : 820,
+        horizontalMaximum,
+        verticalMaximum,
+      ),
+    ),
+  };
+}
+
 function isTextEditingTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
@@ -287,6 +325,7 @@ export default function Home() {
   const rdkitRef = useRef<RDKitModule | null>(null);
   const pointerActionRef = useRef<PointerAction | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canvasSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   const showNotice = useCallback(
     (message: string, tone: "neutral" | "error" = "neutral") => {
@@ -329,6 +368,97 @@ export default function Home() {
     };
   }, [showNotice]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const viewport = window.visualViewport;
+    let animationFrame = 0;
+    const syncVisualViewport = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        root.style.setProperty(
+          "--visual-viewport-height",
+          `${viewport?.height ?? window.innerHeight}px`,
+        );
+        root.style.setProperty(
+          "--visual-viewport-offset-top",
+          `${viewport?.offsetTop ?? 0}px`,
+        );
+      });
+    };
+
+    syncVisualViewport();
+    window.addEventListener("resize", syncVisualViewport);
+    viewport?.addEventListener("resize", syncVisualViewport);
+    viewport?.addEventListener("scroll", syncVisualViewport);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", syncVisualViewport);
+      viewport?.removeEventListener("resize", syncVisualViewport);
+      viewport?.removeEventListener("scroll", syncVisualViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    const readCanvasSize = () => {
+      const stage = document.querySelector<HTMLElement>(".canvas-stage");
+      return {
+        width: stage?.clientWidth ?? window.innerWidth,
+        height: stage?.clientHeight ?? window.innerHeight,
+      };
+    };
+    canvasSizeRef.current = readCanvasSize();
+    const keepMoleculesInView = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        const previousSize = canvasSizeRef.current;
+        const nextSize = readCanvasSize();
+        canvasSizeRef.current = nextSize;
+        const widthChanged =
+          !previousSize || Math.abs(previousSize.width - nextSize.width) > 1;
+        if (isTextEditingTarget(document.activeElement) && !widthChanged) return;
+        setMolecules((current) => {
+          let changed = false;
+          const next = current.map((molecule) => {
+            const ratio = molecule.width / molecule.height;
+            const bounds = getCanvasBounds(ratio);
+            const width = Math.min(molecule.width, bounds.maxWidth);
+            const height = width / ratio;
+            const x = clamp(
+              molecule.x,
+              bounds.left,
+              Math.max(bounds.left, bounds.right - width),
+            );
+            const y = clamp(
+              molecule.y,
+              bounds.top,
+              Math.max(bounds.top, bounds.bottom - height),
+            );
+            if (
+              width === molecule.width &&
+              height === molecule.height &&
+              x === molecule.x &&
+              y === molecule.y
+            ) {
+              return molecule;
+            }
+            changed = true;
+            return { ...molecule, width, height, x, y };
+          });
+          return changed ? next : current;
+        });
+      });
+    };
+
+    window.addEventListener("resize", keepMoleculesInView);
+    window.addEventListener("orientationchange", keepMoleculesInView);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", keepMoleculesInView);
+      window.removeEventListener("orientationchange", keepMoleculesInView);
+    };
+  }, []);
+
   const addSmiles = useCallback(
     async (rawValue: string) => {
       const entries = splitSmilesInput(rawValue);
@@ -366,22 +496,23 @@ export default function Home() {
 
         const lastId = rendered[rendered.length - 1].id;
         setMolecules((current) => {
-          const viewportWidth = window.innerWidth;
-          const viewportHeight = window.innerHeight;
+          const ratio = 1 / 0.67;
+          const bounds = getCanvasBounds(ratio);
           const next = rendered.map((item, index) => {
             const complexity = item.canonicalSmiles.length;
-            const width = clamp(340 + complexity * 2.4, 380, 620);
-            const height = width * 0.67;
+            const preferredWidth = clamp(340 + complexity * 2.4, 380, 620);
+            const width = Math.min(preferredWidth, bounds.maxWidth);
+            const height = width / ratio;
             const cascade = ((current.length + index) % 6) * 26;
             const x = clamp(
-              viewportWidth / 2 - width / 2 + cascade,
-              18,
-              Math.max(18, viewportWidth - width - 18),
+              (bounds.left + bounds.right - width) / 2 + cascade,
+              bounds.left,
+              Math.max(bounds.left, bounds.right - width),
             );
             const y = clamp(
-              viewportHeight / 2 - height / 2 - 34 + cascade * 0.4,
-              82,
-              Math.max(82, viewportHeight - height - 118),
+              (bounds.top + bounds.bottom - height) / 2 + cascade * 0.4,
+              bounds.top,
+              Math.max(bounds.top, bounds.bottom - height),
             );
 
             return {
@@ -699,16 +830,17 @@ export default function Home() {
     const deltaY = event.clientY - action.startY;
 
     if (action.kind === "drag") {
+      const bounds = getCanvasBounds(action.width / action.height);
       updateMolecule(action.id, {
         x: clamp(
           action.x + deltaX,
-          12,
-          Math.max(12, window.innerWidth - action.width - 12),
+          bounds.left,
+          Math.max(bounds.left, bounds.right - action.width),
         ),
         y: clamp(
           action.y + deltaY,
-          68,
-          Math.max(68, window.innerHeight - action.height - 92),
+          bounds.top,
+          Math.max(bounds.top, bounds.bottom - action.height),
         ),
       });
       return;
@@ -720,12 +852,13 @@ export default function Home() {
     const projectedWidthFromX = action.width + localDelta.x * signX;
     const projectedWidthFromY =
       action.width + localDelta.y * signY * action.ratio;
+    const bounds = getCanvasBounds(action.ratio);
     const width = clamp(
       Math.abs(localDelta.x) > Math.abs(localDelta.y)
         ? projectedWidthFromX
         : projectedWidthFromY,
-      220,
-      820,
+      bounds.minWidth,
+      bounds.maxWidth,
     );
     const height = width / action.ratio;
     const centerOffset = rotateVector(
@@ -735,8 +868,16 @@ export default function Home() {
     );
     const centerX = action.anchorX + centerOffset.x;
     const centerY = action.anchorY + centerOffset.y;
-    const x = centerX - width / 2;
-    const y = centerY - height / 2;
+    const x = clamp(
+      centerX - width / 2,
+      bounds.left,
+      Math.max(bounds.left, bounds.right - width),
+    );
+    const y = clamp(
+      centerY - height / 2,
+      bounds.top,
+      Math.max(bounds.top, bounds.bottom - height),
+    );
 
     updateMolecule(action.id, { x, y, width, height });
   };
@@ -802,7 +943,10 @@ export default function Home() {
               <span />
             </div>
             <p>Paste a SMILES string</p>
-            <span>⌘V anywhere, or use the field below</span>
+            <span className="desktop-hint">
+              ⌘V anywhere, or use the field below
+            </span>
+            <span className="mobile-hint">Paste anywhere, or use the field below</span>
           </div>
         )}
 
@@ -967,6 +1111,9 @@ export default function Home() {
           <button
             className="render-button"
             type="submit"
+            aria-label={
+              isRendering ? "Rendering molecule" : "Render molecule"
+            }
             disabled={!input.trim() || isRendering || rendererStatus === "error"}
           >
             <span>{isRendering ? "Rendering" : "Render"}</span>

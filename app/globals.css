@@ -53,7 +53,11 @@ button {
 
 .app-shell {
   position: fixed;
-  inset: 0;
+  top: var(--visual-viewport-offset-top, 0px);
+  right: 0;
+  bottom: auto;
+  left: 0;
+  height: var(--visual-viewport-height, 100dvh);
   isolation: isolate;
   overflow: hidden;
   background:
@@ -262,6 +266,10 @@ button {
 
 .empty-state > span {
   font-size: 12px;
+}
+
+.mobile-hint {
+  display: none;
 }
 
 .empty-orbit {
@@ -826,25 +834,46 @@ html[data-theme="dark"] .notice--error span {
 
 @media (max-width: 680px) {
   .topbar {
-    height: 58px;
-    padding: 0 14px;
+    height: calc(58px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) max(14px, env(safe-area-inset-right)) 0
+      max(14px, env(safe-area-inset-left));
   }
 
   .canvas-stage {
-    inset: 58px 0 0;
+    inset: calc(58px + env(safe-area-inset-top)) 0 0;
   }
 
   .brand-divider,
   .brand-subtitle,
-  .clear-button,
   .canvas-help {
+    display: none;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .theme-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  .clear-button {
+    min-height: 44px;
+    padding: 0 8px;
+  }
+
+  .clear-button kbd {
     display: none;
   }
 
   .smiles-dock {
     bottom: max(14px, env(safe-area-inset-bottom));
-    width: calc(100vw - 20px);
+    right: max(10px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    width: auto;
     border-radius: 14px;
+    transform: none;
   }
 
   .input-kicker {
@@ -852,9 +881,20 @@ html[data-theme="dark"] .notice--error span {
   }
 
   .render-button {
-    width: 40px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     justify-content: center;
+  }
+
+  .input-plus {
+    width: 44px;
+    height: 44px;
+  }
+
+  .input-row input {
+    height: 44px;
+    font-size: 16px;
   }
 
   .render-button > span:first-child {
@@ -866,8 +906,160 @@ html[data-theme="dark"] .notice--error span {
     width: 86vw;
   }
 
+  .desktop-hint {
+    display: none;
+  }
+
+  .mobile-hint {
+    display: inline;
+  }
+
   .selection-toolbar {
     top: -40px;
+  }
+
+  .notice {
+    width: max-content;
+    max-width: calc(100% - 24px);
+  }
+}
+
+@media (max-width: 680px), (pointer: coarse), (max-height: 500px) {
+  .resize-handle {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .resize-handle::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 0 1px rgba(49, 95, 221, 0.5);
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+
+  .resize-handle--nw {
+    top: -22px;
+    left: -22px;
+  }
+
+  .resize-handle--ne {
+    top: -22px;
+    right: -22px;
+  }
+
+  .resize-handle--sw {
+    bottom: -22px;
+    left: -22px;
+  }
+
+  .resize-handle--se {
+    right: -22px;
+    bottom: -22px;
+  }
+
+  .rotation-handle {
+    top: -62px;
+    right: -8px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .selection-toolbar {
+    height: 44px;
+    padding: 2px;
+  }
+
+  .selection-toolbar button {
+    width: 40px;
+    height: 38px;
+  }
+
+  .rotation-value {
+    min-width: 48px;
+    height: 38px;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .topbar {
+    height: calc(52px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) max(14px, env(safe-area-inset-right)) 0
+      max(14px, env(safe-area-inset-left));
+  }
+
+  .canvas-stage {
+    inset: calc(52px + env(safe-area-inset-top)) 0 0;
+  }
+
+  .brand-divider,
+  .brand-subtitle,
+  .canvas-help,
+  .input-kicker {
+    display: none;
+  }
+
+  .smiles-dock {
+    bottom: max(6px, env(safe-area-inset-bottom));
+    width: min(620px, calc(100% - 20px));
+    padding: 7px 8px;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .theme-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  .clear-button {
+    min-height: 44px;
+    padding: 0 8px;
+  }
+
+  .clear-button kbd,
+  .desktop-hint {
+    display: none;
+  }
+
+  .mobile-hint {
+    display: inline;
+  }
+
+  .input-plus,
+  .render-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .input-row input {
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .render-button {
+    padding: 0;
+    justify-content: center;
+  }
+
+  .render-button > span:first-child {
+    display: none;
+  }
+
+  .empty-state {
+    top: 42%;
+    transform: translate(-50%, -50%) scale(0.86);
   }
 }
 
