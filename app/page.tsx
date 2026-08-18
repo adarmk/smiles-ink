@@ -116,6 +116,17 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
+function isTextEditingTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      target.isContentEditable ||
+      target.closest("[contenteditable='true']") !== null)
+  );
+}
+
 function cleanSvg(svgSource: string) {
   const documentNode = new DOMParser().parseFromString(
     svgSource,
@@ -145,7 +156,7 @@ function depictSmiles(rdkit: RDKitModule, smiles: string) {
           height: 480,
           clearBackground: false,
           centreMoleculesBeforeDrawing: true,
-          padding: 0.075,
+          padding: 0.025,
           bondLineWidth: 1.8,
           multipleBondOffset: 0.16,
           minFontSize: 14,
@@ -324,9 +335,7 @@ export default function Home() {
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
-        return;
+      if (isTextEditingTarget(event.target)) return;
       const pasted = event.clipboardData?.getData("text").trim();
       if (!pasted) return;
       event.preventDefault();
@@ -369,11 +378,25 @@ export default function Home() {
     setSelectedId((selected) => (selected === id ? null : selected));
   }, []);
 
+  const clearCanvas = useCallback(() => {
+    setMolecules([]);
+    setSelectedId(null);
+    showNotice("Canvas cleared");
+  }, [showNotice]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
+      if (isTextEditingTarget(event.target)) return;
+
+      if (
+        molecules.length > 0 &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "x"
+      ) {
+        event.preventDefault();
+        clearCanvas();
         return;
+      }
 
       if (event.key === "Escape") {
         setSelectedId(null);
@@ -412,7 +435,7 @@ export default function Home() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [removeMolecule, selectedId]);
+  }, [clearCanvas, molecules.length, removeMolecule, selectedId]);
 
   const startDrag = (
     event: ReactPointerEvent<HTMLDivElement>,
@@ -519,12 +542,6 @@ export default function Home() {
     void addSmiles(pasted);
   };
 
-  const clearCanvas = () => {
-    setMolecules([]);
-    setSelectedId(null);
-    showNotice("Canvas cleared");
-  };
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -539,8 +556,15 @@ export default function Home() {
 
         <div className="topbar-actions">
           {molecules.length > 0 && (
-            <button className="clear-button" type="button" onClick={clearCanvas}>
-              Clear canvas
+            <button
+              className="clear-button"
+              type="button"
+              onClick={clearCanvas}
+              title="Clear canvas (⌘X)"
+              aria-keyshortcuts="Meta+X Control+X"
+            >
+              <span>Clear canvas</span>
+              <kbd aria-hidden="true">⌘X</kbd>
             </button>
           )}
           <div
@@ -725,7 +749,7 @@ export default function Home() {
       )}
 
       <div className="canvas-help" aria-hidden="true">
-        Drag to move&nbsp;&nbsp;·&nbsp;&nbsp;Corners to resize&nbsp;&nbsp;·&nbsp;&nbsp;Delete to remove
+        Drag to move&nbsp;&nbsp;·&nbsp;&nbsp;Corners to resize&nbsp;&nbsp;·&nbsp;&nbsp;Delete to remove&nbsp;&nbsp;·&nbsp;&nbsp;⌘X to clear
       </div>
     </main>
   );

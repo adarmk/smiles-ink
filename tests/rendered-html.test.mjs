@@ -56,6 +56,9 @@ test("includes the requested canvas interactions", async () => {
   assert.match(source, /removeMolecule/);
   assert.match(source, /window\.addEventListener\("paste"/);
   assert.match(source, /prefer_coordgen\(true\)/);
+  assert.match(source, /event\.metaKey \|\| event\.ctrlKey/);
+  assert.match(source, /event\.key\.toLowerCase\(\) === "x"/);
+  assert.match(source, /padding: 0\.025/);
 });
 
 test("repairs common pasted SMILES formatting without changing chemistry", async () => {

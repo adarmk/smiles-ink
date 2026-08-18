@@ -163,6 +163,9 @@ button {
 }
 
 .clear-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   padding: 7px 9px;
   border: 0;
   border-radius: 8px;
@@ -172,6 +175,17 @@ button {
   font-size: 12px;
   font-weight: 560;
   transition: background 150ms ease, color 150ms ease;
+}
+
+.clear-button kbd {
+  padding: 2px 5px;
+  border: 1px solid rgba(27, 31, 25, 0.11);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #858880;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.2;
 }
 
 .clear-button:hover {
@@ -315,7 +329,7 @@ button {
 
 .molecule-art {
   position: absolute;
-  inset: 8px;
+  inset: 2px;
   transform-origin: center;
   transition: filter 150ms ease;
   pointer-events: none;
