@@ -15,7 +15,7 @@ const themeScript = `
 })();`;
 
 export const metadata: Metadata = {
-  title: "Drawchem — SMILES canvas",
+  title: "smiles.ink — SMILES canvas",
   description:
     "A fast, private, fully local canvas for rendering beautiful chemical structures from SMILES.",
 };

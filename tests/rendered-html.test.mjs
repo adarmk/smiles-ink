@@ -23,13 +23,13 @@ async function render() {
   );
 }
 
-test("server-renders the Drawchem canvas", async () => {
+test("server-renders the smiles.ink canvas", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Drawchem — SMILES canvas<\/title>/i);
+  assert.match(html, /<title>smiles\.ink — SMILES canvas<\/title>/i);
   assert.match(html, /Paste a SMILES string/i);
   assert.match(html, /SMILES canvas/i);
   assert.match(html, /Switch to dark mode/i);
