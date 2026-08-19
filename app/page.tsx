@@ -1349,20 +1349,22 @@ export default function Home() {
         <button
           className="mobile-action-button mobile-paste-button"
           type="button"
+          aria-label={
+            isRendering ? "Rendering molecule" : "Paste SMILES from clipboard"
+          }
           onClick={() => void pasteFromClipboard()}
           disabled={isRendering || rendererStatus === "error"}
         >
           <span aria-hidden="true">↧</span>
-          {isRendering ? "Rendering" : "Paste"}
         </button>
         <button
           className="mobile-action-button mobile-clear-button"
           type="button"
+          aria-label="Clear canvas"
           onClick={clearCanvas}
           disabled={molecules.length === 0}
         >
           <span aria-hidden="true">×</span>
-          Clear
         </button>
       </div>
 

@@ -552,30 +552,26 @@ button {
   left: max(10px, env(safe-area-inset-left));
   z-index: 1000;
   display: none;
-  gap: 7px;
-  padding: 6px;
-  border: 1px solid rgba(26, 30, 24, 0.15);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow:
-    0 18px 46px rgba(28, 31, 26, 0.13),
-    0 2px 5px rgba(28, 31, 26, 0.05);
-  backdrop-filter: blur(18px);
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
 }
 
 .mobile-action-button {
   display: flex;
-  flex: 1;
+  flex: 0 0 44px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 52px;
-  padding: 0 18px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 0;
-  border-radius: 11px;
+  border-radius: 12px;
+  box-shadow:
+    0 9px 24px rgba(28, 31, 26, 0.12),
+    0 1px 3px rgba(28, 31, 26, 0.08);
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 680;
+  pointer-events: auto;
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
@@ -846,14 +842,6 @@ html[data-theme="dark"] .mobile-clear-button {
   background: rgba(238, 243, 233, 0.06);
 }
 
-html[data-theme="dark"] .mobile-action-dock {
-  border-color: var(--line);
-  background: rgba(29, 32, 27, 0.94);
-  box-shadow:
-    0 20px 48px rgba(0, 0, 0, 0.34),
-    0 2px 6px rgba(0, 0, 0, 0.22);
-}
-
 html[data-theme="dark"] .input-plus {
   border-color: var(--line);
   color: #a0a79c;
@@ -1094,11 +1082,7 @@ html[data-theme="dark"] .notice--error span {
   }
 
   .mobile-action-dock {
-    right: auto;
     bottom: max(6px, env(safe-area-inset-bottom));
-    left: 50%;
-    width: min(360px, calc(100% - 20px));
-    transform: translateX(-50%);
   }
 
   .topbar-actions {
