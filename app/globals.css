@@ -223,7 +223,12 @@ button {
   inset: 66px 0 0;
   z-index: 2;
   overflow: hidden;
+  cursor: grab;
   touch-action: none;
+}
+
+.canvas-stage:active {
+  cursor: grabbing;
 }
 
 .canvas-viewport {

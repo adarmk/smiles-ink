@@ -359,6 +359,7 @@ export default function Home() {
     INITIAL_CANVAS_TRANSFORM,
   );
   const rdkitRef = useRef<RDKitModule | null>(null);
+  const canvasStageRef = useRef<HTMLElement | null>(null);
   const pointerActionRef = useRef<PointerAction | null>(null);
   const canvasTransformRef = useRef<CanvasTransform>(INITIAL_CANVAS_TRANSFORM);
   const canvasGestureRef = useRef<CanvasGesture | null>(null);
@@ -370,6 +371,43 @@ export default function Home() {
     canvasTransformRef.current = next;
     setCanvasTransform(next);
   }, []);
+
+  useEffect(() => {
+    const stage = canvasStageRef.current;
+    if (!stage) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      const stageRect = stage.getBoundingClientRect();
+      const delta =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? event.deltaY * 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? event.deltaY * stageRect.height
+            : event.deltaY;
+      if (!Number.isFinite(delta) || delta === 0) return;
+
+      event.preventDefault();
+      const transform = canvasTransformRef.current;
+      const pointX = event.clientX - stageRect.left;
+      const pointY = event.clientY - stageRect.top;
+      const worldX = (pointX - transform.x) / transform.scale;
+      const worldY = (pointY - transform.y) / transform.scale;
+      const scale = clamp(
+        transform.scale * Math.exp(-clamp(delta, -100, 100) * 0.0025),
+        MIN_CANVAS_SCALE,
+        MAX_CANVAS_SCALE,
+      );
+
+      applyCanvasTransform({
+        scale,
+        x: pointX - worldX * scale,
+        y: pointY - worldY * scale,
+      });
+    };
+
+    stage.addEventListener("wheel", handleWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", handleWheel);
+  }, [applyCanvasTransform]);
 
   const showNotice = useCallback(
     (message: string, tone: "neutral" | "error" = "neutral") => {
@@ -862,7 +900,20 @@ export default function Home() {
     event: ReactPointerEvent<HTMLElement>,
   ) => {
     if (event.pointerType !== "touch") {
-      if (event.target === event.currentTarget) setSelectedId(null);
+      if (event.target === event.currentTarget && event.button === 0) {
+        event.preventDefault();
+        const transform = canvasTransformRef.current;
+        canvasGestureRef.current = {
+          kind: "pan",
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          x: transform.x,
+          y: transform.y,
+        };
+        setSelectedId(null);
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       return;
     }
 
@@ -917,6 +968,20 @@ export default function Home() {
   const handleCanvasPointerMove = (
     event: ReactPointerEvent<HTMLElement>,
   ) => {
+    const gesture = canvasGestureRef.current;
+    if (
+      gesture?.kind === "pan" &&
+      gesture.pointerId === event.pointerId
+    ) {
+      event.preventDefault();
+      applyCanvasTransform({
+        scale: canvasTransformRef.current.scale,
+        x: gesture.x + event.clientX - gesture.startX,
+        y: gesture.y + event.clientY - gesture.startY,
+      });
+      return;
+    }
+
     if (event.pointerType !== "touch") return;
     if (touchPointsRef.current.has(event.pointerId)) {
       touchPointsRef.current.set(event.pointerId, {
@@ -925,7 +990,6 @@ export default function Home() {
       });
     }
 
-    const gesture = canvasGestureRef.current;
     if (gesture?.kind === "pinch" && touchPointsRef.current.size >= 2) {
       event.preventDefault();
       const [first, second] = Array.from(touchPointsRef.current.values());
@@ -949,17 +1013,6 @@ export default function Home() {
       return;
     }
 
-    if (
-      gesture?.kind === "pan" &&
-      gesture.pointerId === event.pointerId
-    ) {
-      event.preventDefault();
-      applyCanvasTransform({
-        scale: canvasTransformRef.current.scale,
-        x: gesture.x + event.clientX - gesture.startX,
-        y: gesture.y + event.clientY - gesture.startY,
-      });
-    }
   };
 
   useEffect(() => {
@@ -1136,6 +1189,7 @@ export default function Home() {
       </header>
 
       <section
+        ref={canvasStageRef}
         className="canvas-stage"
         aria-label="Molecule canvas"
         onPointerDown={handleCanvasPointerDown}
@@ -1380,7 +1434,7 @@ export default function Home() {
       )}
 
       <div className="canvas-help" aria-hidden="true">
-        Drag to move&nbsp;&nbsp;·&nbsp;&nbsp;Corners resize&nbsp;&nbsp;·&nbsp;&nbsp;Arc handle rotates&nbsp;&nbsp;·&nbsp;&nbsp;Delete removes&nbsp;&nbsp;·&nbsp;&nbsp;⌘X clears
+        Scroll or pinch to zoom&nbsp;&nbsp;·&nbsp;&nbsp;Drag canvas to pan&nbsp;&nbsp;·&nbsp;&nbsp;Drag molecule to move&nbsp;&nbsp;·&nbsp;&nbsp;Corners resize&nbsp;&nbsp;·&nbsp;&nbsp;Arc rotates
       </div>
     </main>
   );
