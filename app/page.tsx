@@ -894,9 +894,7 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand" aria-label="smiles.ink">
-          <span className="brand-mark" aria-hidden="true">
-            <span />
-          </span>
+          <span className="brand-mark" aria-hidden="true" />
           <span className="brand-word">smiles.ink</span>
           <span className="brand-divider" aria-hidden="true" />
           <span className="brand-subtitle">SMILES canvas</span>

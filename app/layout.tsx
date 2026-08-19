@@ -18,6 +18,9 @@ export const metadata: Metadata = {
   title: "smiles.ink — SMILES canvas",
   description:
     "A fast, private, fully local canvas for rendering beautiful chemical structures from SMILES.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export const viewport: Viewport = {
