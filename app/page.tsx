@@ -27,9 +27,30 @@ type MoleculeItem = {
 
 type ResizeDirection = "nw" | "ne" | "sw" | "se";
 type Theme = "light" | "dark";
+type CanvasTransform = { x: number; y: number; scale: number };
+type TouchPoint = { x: number; y: number };
+type CanvasGesture =
+  | {
+      kind: "pan";
+      pointerId: number;
+      startX: number;
+      startY: number;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "pinch";
+      startDistance: number;
+      startScale: number;
+      worldX: number;
+      worldY: number;
+    };
 
 const THEME_STORAGE_KEY = "drawchem-theme";
 const THEME_CHANGE_EVENT = "drawchem:theme-change";
+const INITIAL_CANVAS_TRANSFORM: CanvasTransform = { x: 0, y: 0, scale: 1 };
+const MIN_CANVAS_SCALE = 0.6;
+const MAX_CANVAS_SCALE = 2.8;
 
 function getThemeSnapshot(): Theme {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -194,12 +215,18 @@ function resizeCursor(direction: ResizeDirection, rotation: number) {
   return cursors[Math.round(angle / 45) % cursors.length];
 }
 
-function getCanvasBounds(ratio = 1.5) {
+function getCanvasBounds(
+  ratio = 1.5,
+  transform: CanvasTransform = INITIAL_CANVAS_TRANSFORM,
+) {
   const stage = document.querySelector<HTMLElement>(".canvas-stage");
-  const dock = document.querySelector<HTMLElement>(".smiles-dock");
+  const dock = Array.from(
+    document.querySelectorAll<HTMLElement>(".canvas-dock"),
+  ).find((element) => element.getClientRects().length > 0);
   const stageRect = stage?.getBoundingClientRect();
   const width = stageRect?.width ?? window.innerWidth;
   const height = stageRect?.height ?? window.innerHeight;
+  const scale = transform.scale;
   const isCompact = width <= 680 || height <= 500;
   const sidePadding = isCompact ? 24 : 12;
   const top = isCompact ? 70 : 48;
@@ -211,15 +238,21 @@ function getCanvasBounds(ratio = 1.5) {
     top + 108,
     Math.min(height - 12, dockTop - (isCompact ? 42 : 34)),
   );
-  const minWidth = isCompact ? 160 : 220;
-  const horizontalMaximum = Math.max(minWidth, width - sidePadding * 2);
-  const verticalMaximum = Math.max(minWidth, (bottom - top) * ratio);
+  const minWidth = (isCompact ? 160 : 220) / scale;
+  const horizontalMaximum = Math.max(
+    minWidth,
+    (width - sidePadding * 2) / scale,
+  );
+  const verticalMaximum = Math.max(
+    minWidth,
+    ((bottom - top) * ratio) / scale,
+  );
 
   return {
-    left: sidePadding,
-    right: width - sidePadding,
-    top,
-    bottom,
+    left: (sidePadding - transform.x) / scale,
+    right: (width - sidePadding - transform.x) / scale,
+    top: (top - transform.y) / scale,
+    bottom: (bottom - transform.y) / scale,
     minWidth,
     maxWidth: Math.max(
       minWidth,
@@ -322,10 +355,21 @@ export default function Home() {
   const [isRendering, setIsRendering] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"neutral" | "error">("neutral");
+  const [canvasTransform, setCanvasTransform] = useState<CanvasTransform>(
+    INITIAL_CANVAS_TRANSFORM,
+  );
   const rdkitRef = useRef<RDKitModule | null>(null);
   const pointerActionRef = useRef<PointerAction | null>(null);
+  const canvasTransformRef = useRef<CanvasTransform>(INITIAL_CANVAS_TRANSFORM);
+  const canvasGestureRef = useRef<CanvasGesture | null>(null);
+  const touchPointsRef = useRef(new Map<number, TouchPoint>());
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasSizeRef = useRef<{ width: number; height: number } | null>(null);
+
+  const applyCanvasTransform = useCallback((next: CanvasTransform) => {
+    canvasTransformRef.current = next;
+    setCanvasTransform(next);
+  }, []);
 
   const showNotice = useCallback(
     (message: string, tone: "neutral" | "error" = "neutral") => {
@@ -421,7 +465,10 @@ export default function Home() {
           let changed = false;
           const next = current.map((molecule) => {
             const ratio = molecule.width / molecule.height;
-            const bounds = getCanvasBounds(ratio);
+            const bounds = getCanvasBounds(
+              ratio,
+              canvasTransformRef.current,
+            );
             const width = Math.min(molecule.width, bounds.maxWidth);
             const height = width / ratio;
             const x = clamp(
@@ -497,7 +544,7 @@ export default function Home() {
         const lastId = rendered[rendered.length - 1].id;
         setMolecules((current) => {
           const ratio = 1 / 0.67;
-          const bounds = getCanvasBounds(ratio);
+          const bounds = getCanvasBounds(ratio, canvasTransformRef.current);
           const next = rendered.map((item, index) => {
             const complexity = item.canonicalSmiles.length;
             const preferredWidth = clamp(340 + complexity * 2.4, 380, 620);
@@ -606,8 +653,23 @@ export default function Home() {
   const clearCanvas = useCallback(() => {
     setMolecules([]);
     setSelectedId(null);
+    applyCanvasTransform(INITIAL_CANVAS_TRANSFORM);
     showNotice("Canvas cleared");
-  }, [showNotice]);
+  }, [applyCanvasTransform, showNotice]);
+
+  const pasteFromClipboard = useCallback(async () => {
+    if (isRendering || rendererStatus === "error") return;
+    try {
+      const pasted = (await navigator.clipboard.readText()).trim();
+      if (!pasted) {
+        showNotice("Your clipboard is empty.", "error");
+        return;
+      }
+      await addSmiles(pasted);
+    } catch {
+      showNotice("Allow clipboard access, then try Paste again.", "error");
+    }
+  }, [addSmiles, isRendering, rendererStatus, showNotice]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -644,7 +706,7 @@ export default function Home() {
       const delta = movement[event.key];
       if (!delta) return;
       event.preventDefault();
-      const step = event.shiftKey ? 10 : 2;
+      const step = (event.shiftKey ? 10 : 2) / canvasTransformRef.current.scale;
       setMolecules((current) =>
         current.map((molecule) =>
           molecule.id === selectedId
@@ -779,11 +841,136 @@ export default function Home() {
     }
   }, []);
 
+  const finishCanvasGesture = useCallback((pointerId?: number) => {
+    if (pointerId === undefined) {
+      touchPointsRef.current.clear();
+      canvasGestureRef.current = null;
+      return;
+    }
+
+    touchPointsRef.current.delete(pointerId);
+    const gesture = canvasGestureRef.current;
+    if (
+      (gesture?.kind === "pan" && gesture.pointerId === pointerId) ||
+      (gesture?.kind === "pinch" && touchPointsRef.current.size < 2)
+    ) {
+      canvasGestureRef.current = null;
+    }
+  }, []);
+
+  const handleCanvasPointerDown = (
+    event: ReactPointerEvent<HTMLElement>,
+  ) => {
+    if (event.pointerType !== "touch") {
+      if (event.target === event.currentTarget) setSelectedId(null);
+      return;
+    }
+
+    touchPointsRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (touchPointsRef.current.size >= 2) {
+      event.preventDefault();
+      pointerActionRef.current = null;
+      const [first, second] = Array.from(touchPointsRef.current.values());
+      const stageRect = event.currentTarget.getBoundingClientRect();
+      const centerX = (first.x + second.x) / 2 - stageRect.left;
+      const centerY = (first.y + second.y) / 2 - stageRect.top;
+      const transform = canvasTransformRef.current;
+      canvasGestureRef.current = {
+        kind: "pinch",
+        startDistance: Math.max(
+          1,
+          Math.hypot(second.x - first.x, second.y - first.y),
+        ),
+        startScale: transform.scale,
+        worldX: (centerX - transform.x) / transform.scale,
+        worldY: (centerY - transform.y) / transform.scale,
+      };
+      setSelectedId(null);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // The other pointer may already own capture on a molecule.
+      }
+      return;
+    }
+
+    if (event.target === event.currentTarget) {
+      event.preventDefault();
+      const transform = canvasTransformRef.current;
+      canvasGestureRef.current = {
+        kind: "pan",
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: transform.x,
+        y: transform.y,
+      };
+      setSelectedId(null);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+  };
+
+  const handleCanvasPointerMove = (
+    event: ReactPointerEvent<HTMLElement>,
+  ) => {
+    if (event.pointerType !== "touch") return;
+    if (touchPointsRef.current.has(event.pointerId)) {
+      touchPointsRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+    }
+
+    const gesture = canvasGestureRef.current;
+    if (gesture?.kind === "pinch" && touchPointsRef.current.size >= 2) {
+      event.preventDefault();
+      const [first, second] = Array.from(touchPointsRef.current.values());
+      const stageRect = event.currentTarget.getBoundingClientRect();
+      const centerX = (first.x + second.x) / 2 - stageRect.left;
+      const centerY = (first.y + second.y) / 2 - stageRect.top;
+      const distance = Math.max(
+        1,
+        Math.hypot(second.x - first.x, second.y - first.y),
+      );
+      const scale = clamp(
+        gesture.startScale * (distance / gesture.startDistance),
+        MIN_CANVAS_SCALE,
+        MAX_CANVAS_SCALE,
+      );
+      applyCanvasTransform({
+        scale,
+        x: centerX - gesture.worldX * scale,
+        y: centerY - gesture.worldY * scale,
+      });
+      return;
+    }
+
+    if (
+      gesture?.kind === "pan" &&
+      gesture.pointerId === event.pointerId
+    ) {
+      event.preventDefault();
+      applyCanvasTransform({
+        scale: canvasTransformRef.current.scale,
+        x: gesture.x + event.clientX - gesture.startX,
+        y: gesture.y + event.clientY - gesture.startY,
+      });
+    }
+  };
+
   useEffect(() => {
     const handlePointerEnd = (event: PointerEvent) => {
       finishPointerAction(event.pointerId);
+      finishCanvasGesture(event.pointerId);
     };
-    const handleWindowBlur = () => finishPointerAction();
+    const handleWindowBlur = () => {
+      finishPointerAction();
+      finishCanvasGesture();
+    };
 
     window.addEventListener("pointerup", handlePointerEnd, true);
     window.addEventListener("pointercancel", handlePointerEnd, true);
@@ -793,7 +980,7 @@ export default function Home() {
       window.removeEventListener("pointercancel", handlePointerEnd, true);
       window.removeEventListener("blur", handleWindowBlur);
     };
-  }, [finishPointerAction]);
+  }, [finishCanvasGesture, finishPointerAction]);
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const action = pointerActionRef.current;
@@ -826,11 +1013,15 @@ export default function Home() {
       return;
     }
 
-    const deltaX = event.clientX - action.startX;
-    const deltaY = event.clientY - action.startY;
+    const scale = canvasTransformRef.current.scale;
+    const deltaX = (event.clientX - action.startX) / scale;
+    const deltaY = (event.clientY - action.startY) / scale;
 
     if (action.kind === "drag") {
-      const bounds = getCanvasBounds(action.width / action.height);
+      const bounds = getCanvasBounds(
+        action.width / action.height,
+        canvasTransformRef.current,
+      );
       updateMolecule(action.id, {
         x: clamp(
           action.x + deltaX,
@@ -852,7 +1043,10 @@ export default function Home() {
     const projectedWidthFromX = action.width + localDelta.x * signX;
     const projectedWidthFromY =
       action.width + localDelta.y * signY * action.ratio;
-    const bounds = getCanvasBounds(action.ratio);
+    const bounds = getCanvasBounds(
+      action.ratio,
+      canvasTransformRef.current,
+    );
     const width = clamp(
       Math.abs(localDelta.x) > Math.abs(localDelta.y)
         ? projectedWidthFromX
@@ -944,26 +1138,35 @@ export default function Home() {
       <section
         className="canvas-stage"
         aria-label="Molecule canvas"
-        onPointerDown={(event) => {
-          if (event.target === event.currentTarget) setSelectedId(null);
-        }}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={(event) => finishCanvasGesture(event.pointerId)}
+        onPointerCancel={(event) => finishCanvasGesture(event.pointerId)}
       >
-        {molecules.length === 0 && (
-          <div className="empty-state" aria-hidden="true">
-            <div className="empty-orbit">
-              <span />
-              <span />
-              <span />
+        <div
+          className="canvas-viewport"
+          style={{
+            transform: `translate3d(${canvasTransform.x}px, ${canvasTransform.y}px, 0) scale(${canvasTransform.scale})`,
+          }}
+        >
+          {molecules.length === 0 && (
+            <div className="empty-state" aria-hidden="true">
+              <div className="empty-orbit">
+                <span />
+                <span />
+                <span />
+              </div>
+              <p>Paste a SMILES string</p>
+              <span className="desktop-hint">
+                ⌘V anywhere, or use the field below
+              </span>
+              <span className="mobile-hint">
+                Tap Paste below · drag to pan · pinch to zoom
+              </span>
             </div>
-            <p>Paste a SMILES string</p>
-            <span className="desktop-hint">
-              ⌘V anywhere, or use the field below
-            </span>
-            <span className="mobile-hint">Paste anywhere, or use the field below</span>
-          </div>
-        )}
+          )}
 
-        {molecules.map((molecule) => {
+          {molecules.map((molecule) => {
           const isSelected = selectedId === molecule.id;
           const displayedRotation =
             ((Math.round(molecule.rotation) % 360) + 360) % 360;
@@ -973,8 +1176,8 @@ export default function Home() {
             Math.abs(molecule.height * Math.cos(radians));
           const toolbarTop = (molecule.height - rotatedHeight) / 2 - 48;
           const labelTop = (molecule.height + rotatedHeight) / 2 + 10;
-          return (
-            <div
+            return (
+              <div
               className={`molecule-item${isSelected ? " is-selected" : ""}`}
               key={molecule.id}
               style={{
@@ -1086,13 +1289,14 @@ export default function Home() {
                   </div>
                 </>
               )}
-            </div>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <form
-        className="smiles-dock"
+        className="smiles-dock canvas-dock"
         onSubmit={(event) => {
           event.preventDefault();
           void addSmiles(input);
@@ -1136,6 +1340,31 @@ export default function Home() {
           </button>
         </div>
       </form>
+
+      <div
+        className="mobile-action-dock canvas-dock"
+        role="group"
+        aria-label="Canvas actions"
+      >
+        <button
+          className="mobile-action-button mobile-paste-button"
+          type="button"
+          onClick={() => void pasteFromClipboard()}
+          disabled={isRendering || rendererStatus === "error"}
+        >
+          <span aria-hidden="true">↧</span>
+          {isRendering ? "Rendering" : "Paste"}
+        </button>
+        <button
+          className="mobile-action-button mobile-clear-button"
+          type="button"
+          onClick={clearCanvas}
+          disabled={molecules.length === 0}
+        >
+          <span aria-hidden="true">×</span>
+          Clear
+        </button>
+      </div>
 
       {notice && (
         <div
