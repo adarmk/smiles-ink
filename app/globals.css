@@ -97,7 +97,6 @@ button {
 .brand,
 .topbar-actions,
 .input-row,
-.input-kicker,
 .selection-toolbar,
 .notice {
   display: flex;
@@ -131,7 +130,6 @@ button {
 }
 
 .brand-subtitle,
-.input-kicker,
 .canvas-help {
   color: var(--muted);
   font-size: 10px;
@@ -606,17 +604,6 @@ button {
   color: var(--muted);
 }
 
-.input-kicker {
-  justify-content: space-between;
-  margin: 0 4px 8px;
-  font-size: 9px;
-  letter-spacing: 0.11em;
-}
-
-.input-kicker span:first-child {
-  color: var(--blue);
-}
-
 .input-row {
   gap: 8px;
 }
@@ -937,10 +924,6 @@ html[data-theme="dark"] .notice--error span {
     display: flex;
   }
 
-  .input-kicker {
-    margin-bottom: 6px;
-  }
-
   .render-button {
     width: 44px;
     height: 44px;
@@ -1075,8 +1058,7 @@ html[data-theme="dark"] .notice--error span {
 
   .brand-divider,
   .brand-subtitle,
-  .canvas-help,
-  .input-kicker {
+  .canvas-help {
     display: none;
   }
 

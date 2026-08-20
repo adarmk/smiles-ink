@@ -1356,14 +1356,6 @@ export default function Home() {
           void addSmiles(input);
         }}
       >
-        <div className="input-kicker">
-          <span>SMILES</span>
-          <span>
-            {molecules.length
-              ? `${molecules.length} on canvas · auto-clean on`
-              : "auto-clean on"}
-          </span>
-        </div>
         <div className="input-row">
           <span className="input-plus" aria-hidden="true">
             +
