@@ -1364,7 +1364,7 @@ export default function Home() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onPaste={handleInputPaste}
-            placeholder="Paste SMILES — spaces & line breaks are okay…"
+            placeholder="Paste SMILES…"
             aria-label="SMILES string"
             autoCapitalize="off"
             autoComplete="off"
