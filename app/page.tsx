@@ -22,6 +22,8 @@ type MoleculeItem = {
   width: number;
   height: number;
   rotation: number;
+  flippedHorizontally: boolean;
+  flippedVertically: boolean;
   zIndex: number;
 };
 
@@ -274,6 +276,18 @@ function isTextEditingTarget(target: EventTarget | null) {
       target.isContentEditable ||
       target.closest("[contenteditable='true']") !== null)
   );
+}
+
+function hasSelectedTextInEditor(target: EventTarget | null) {
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    return (
+      target.selectionStart !== null &&
+      target.selectionEnd !== null &&
+      target.selectionStart !== target.selectionEnd
+    );
+  }
+
+  return isTextEditingTarget(target);
 }
 
 function cleanSvg(svgSource: string) {
@@ -607,6 +621,8 @@ export default function Home() {
               width,
               height,
               rotation: 0,
+              flippedHorizontally: false,
+              flippedVertically: false,
               zIndex: current.length + index + 1,
             };
           });
@@ -694,6 +710,58 @@ export default function Home() {
     applyCanvasTransform(INITIAL_CANVAS_TRANSFORM);
     showNotice("Canvas cleared");
   }, [applyCanvasTransform, showNotice]);
+
+  const copySmiles = useCallback(
+    async (smiles: string) => {
+      try {
+        await navigator.clipboard.writeText(smiles);
+        showNotice("SMILES copied");
+      } catch {
+        showNotice("Your browser blocked clipboard access.", "error");
+      }
+    },
+    [showNotice],
+  );
+
+  useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!selectedId || hasSelectedTextInEditor(event.target)) return;
+      const selectedMolecule = molecules.find(
+        (molecule) => molecule.id === selectedId,
+      );
+      if (!selectedMolecule || !event.clipboardData) return;
+
+      event.preventDefault();
+      event.clipboardData.setData(
+        "text/plain",
+        selectedMolecule.canonicalSmiles,
+      );
+      showNotice("SMILES copied");
+    };
+
+    window.addEventListener("copy", handleCopy);
+    return () => window.removeEventListener("copy", handleCopy);
+  }, [molecules, selectedId, showNotice]);
+
+  const flipMolecule = useCallback(
+    (id: string, direction: "horizontal" | "vertical") => {
+      setMolecules((current) =>
+        current.map((molecule) => {
+          if (molecule.id !== id) return molecule;
+          return direction === "horizontal"
+            ? {
+                ...molecule,
+                flippedHorizontally: !molecule.flippedHorizontally,
+              }
+            : {
+                ...molecule,
+                flippedVertically: !molecule.flippedVertically,
+              };
+        }),
+      );
+    },
+    [],
+  );
 
   const pasteFromClipboard = useCallback(async () => {
     if (isRendering || rendererStatus === "error") return;
@@ -1243,6 +1311,7 @@ export default function Home() {
               }}
               role="group"
               aria-label={`Molecule ${molecule.canonicalSmiles}`}
+              aria-keyshortcuts="Meta+C Control+C"
               onPointerDown={(event) => startDrag(event, molecule)}
               onPointerMove={handlePointerMove}
               onPointerUp={(event) => finishPointerAction(event.pointerId)}
@@ -1255,7 +1324,12 @@ export default function Home() {
                 className="molecule-transform"
                 style={{ transform: `rotate(${molecule.rotation}deg)` }}
               >
-                <div className="molecule-art">
+                <div
+                  className="molecule-art"
+                  style={{
+                    transform: `scale(${molecule.flippedHorizontally ? -1 : 1}, ${molecule.flippedVertically ? -1 : 1})`,
+                  }}
+                >
                   <div
                     className="molecule-svg"
                     dangerouslySetInnerHTML={{ __html: molecule.svg }}
@@ -1324,6 +1398,57 @@ export default function Home() {
                     </span>
                     <span className="toolbar-divider" aria-hidden="true" />
                     <button
+                      className="copy-button"
+                      type="button"
+                      title="Copy SMILES (⌘C / Ctrl+C)"
+                      aria-label="Copy SMILES"
+                      onClick={() => void copySmiles(molecule.canonicalSmiles)}
+                    >
+                      <svg
+                        className="toolbar-icon"
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                      >
+                        <rect x="7" y="3" width="9" height="11" rx="1.5" />
+                        <path d="M5 6H4.5A1.5 1.5 0 0 0 3 7.5v8A1.5 1.5 0 0 0 4.5 17h7A1.5 1.5 0 0 0 13 15.5V16" />
+                      </svg>
+                    </button>
+                    <button
+                      className={`flip-button${molecule.flippedHorizontally ? " is-active" : ""}`}
+                      type="button"
+                      title="Flip horizontally"
+                      aria-label="Flip molecule horizontally"
+                      aria-pressed={molecule.flippedHorizontally}
+                      onClick={() => flipMolecule(molecule.id, "horizontal")}
+                    >
+                      <svg
+                        className="toolbar-icon"
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                      >
+                        <path className="mirror-axis" d="M10 2v16" />
+                        <path d="m7.5 5-4 5 4 5V5Zm5 0 4 5-4 5V5Z" />
+                      </svg>
+                    </button>
+                    <button
+                      className={`flip-button${molecule.flippedVertically ? " is-active" : ""}`}
+                      type="button"
+                      title="Flip vertically"
+                      aria-label="Flip molecule vertically"
+                      aria-pressed={molecule.flippedVertically}
+                      onClick={() => flipMolecule(molecule.id, "vertical")}
+                    >
+                      <svg
+                        className="toolbar-icon"
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                      >
+                        <path className="mirror-axis" d="M2 10h16" />
+                        <path d="m5 7.5 5-4 5 4H5Zm0 5 5 4 5-4H5Z" />
+                      </svg>
+                    </button>
+                    <span className="toolbar-divider" aria-hidden="true" />
+                    <button
                       className="delete-button"
                       type="button"
                       title="Delete molecule"
@@ -1336,7 +1461,7 @@ export default function Home() {
 
                   <div
                     className="smiles-label"
-                    title={molecule.canonicalSmiles}
+                    title={`${molecule.canonicalSmiles} · ⌘C / Ctrl+C to copy`}
                     style={{ top: labelTop }}
                   >
                     {molecule.canonicalSmiles}

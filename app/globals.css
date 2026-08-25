@@ -347,6 +347,7 @@ button {
 .molecule-art {
   position: absolute;
   inset: 2px;
+  transform-origin: center;
   transition: filter 150ms ease;
   pointer-events: none;
 }
@@ -404,6 +405,31 @@ button {
 
 .selection-toolbar button:hover {
   background: #f0f0ec;
+}
+
+.selection-toolbar button.is-active {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.toolbar-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.flip-button .toolbar-icon {
+  fill: currentColor;
+  stroke-width: 1;
+}
+
+.flip-button .mirror-axis {
+  fill: none;
+  stroke-dasharray: 1.5 2;
 }
 
 .selection-toolbar .delete-button:hover {
@@ -797,6 +823,11 @@ html[data-theme="dark"] .selection-toolbar {
 
 html[data-theme="dark"] .selection-toolbar button:hover {
   background: #343930;
+}
+
+html[data-theme="dark"] .selection-toolbar button.is-active {
+  background: var(--blue-soft);
+  color: var(--blue);
 }
 
 html[data-theme="dark"] .selection-toolbar .delete-button:hover {

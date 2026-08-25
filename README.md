@@ -8,7 +8,8 @@ A private, local-first canvas for turning SMILES strings into publication-qualit
 - Automatically cleans common paste errors such as spaces, line breaks, hidden characters, Unicode dashes or dots, wrapping quotes, `SMILES:` labels, trailing punctuation, and trailing molecule names.
 - Uses RDKit.js with CoordGen for chemical parsing and 2D coordinate generation.
 - Renders crisp, resolution-independent SVG structures.
-- Drag, resize, rotate, nudge, and delete molecules on an infinite-feeling canvas with light and dark themes.
+- Drag, resize, rotate, flip horizontally or vertically, nudge, and delete molecules on an infinite-feeling canvas with light and dark themes.
+- Select a molecule and press `⌘C` or `Ctrl+C` to copy its canonical SMILES string.
 - Pan the canvas by dragging its empty space. Zoom with a mouse wheel or trackpad on desktop, or pinch on touch devices.
 - Clear the canvas from the desktop header, with `⌘X` or `Ctrl+X`, or from the compact mobile controls.
 - Rejoins a SMILES string that was wrapped across several lines. To paste several different molecules at once, separate them with a blank line.

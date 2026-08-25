@@ -68,6 +68,14 @@ test("includes the requested canvas interactions", async () => {
   assert.match(source, /prefer_coordgen\(true\)/);
   assert.match(source, /event\.metaKey \|\| event\.ctrlKey/);
   assert.match(source, /event\.key\.toLowerCase\(\) === "x"/);
+  assert.match(source, /window\.addEventListener\("copy"/);
+  assert.match(source, /selectedMolecule\.canonicalSmiles/);
+  assert.match(source, /navigator\.clipboard\.writeText\(smiles\)/);
+  assert.match(source, /flipMolecule/);
+  assert.match(source, /flippedHorizontally/);
+  assert.match(source, /flippedVertically/);
+  assert.match(source, /Flip molecule horizontally/);
+  assert.match(source, /Flip molecule vertically/);
   assert.match(source, /padding: 0\.025/);
   assert.match(source, /window\.addEventListener\("pointerup"/);
   assert.match(source, /window\.addEventListener\("pointercancel"/);
