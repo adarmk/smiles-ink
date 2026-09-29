@@ -35,6 +35,10 @@ const eslintConfig = defineConfig([
         version: "detect",
       },
     },
+    rules: {
+      // Allow `const { omitted, ...rest } = value` to drop fields.
+      "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
+    },
   },
 ]);
 

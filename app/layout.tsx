@@ -1,18 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-
-const themeScript = `
-(() => {
-  try {
-    const stored = localStorage.getItem("drawchem-theme");
-    const theme = stored === "light" || stored === "dark"
-      ? stored
-      : window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-    document.documentElement.dataset.theme = theme;
-  } catch {}
-})();`;
+import { themeBootScript } from "./lib/theme-script";
 
 export const metadata: Metadata = {
   title: "smiles.ink — SMILES canvas",
@@ -39,8 +27,8 @@ export default function RootLayout({
       <head>
         <meta name="color-scheme" content="light dark" />
         <script
-          id="drawchem-theme"
-          dangerouslySetInnerHTML={{ __html: themeScript }}
+          id="smiles-ink-theme"
+          dangerouslySetInnerHTML={{ __html: themeBootScript }}
         />
       </head>
       <body>{children}</body>

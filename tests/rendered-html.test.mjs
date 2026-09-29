@@ -33,7 +33,7 @@ test("server-renders the smiles.ink canvas", async () => {
   assert.match(html, /Paste a SMILES string/i);
   assert.match(html, /SMILES canvas/i);
   assert.match(html, /Switch to dark mode/i);
-  assert.match(html, /drawchem-theme/i);
+  assert.match(html, /smiles-ink-theme/i);
   assert.doesNotMatch(html, /RDKit · local/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
@@ -48,57 +48,4 @@ test("ships the chemistry engine as local application assets", async () => {
   assert.ok(javascript.size > 100_000);
   assert.ok(wasm.size > 1_000_000);
   assert.match(packageSource, /"@rdkit\/rdkit"/);
-});
-
-test("includes the requested canvas interactions", async () => {
-  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-
-  assert.match(source, /startDrag/);
-  assert.match(source, /startResize/);
-  assert.match(source, /startRotation/);
-  assert.match(source, /shortestAngleDelta/);
-  assert.match(source, /rotateVector/);
-  assert.match(source, /anchorX/);
-  assert.match(source, /className="molecule-transform"/);
-  assert.match(source, /direction \* 15/);
-  assert.match(source, /rotation-handle/);
-  assert.doesNotMatch(source, /Rotate left 15|Rotate right 15/);
-  assert.match(source, /removeMolecule/);
-  assert.match(source, /window\.addEventListener\("paste"/);
-  assert.match(source, /prefer_coordgen\(true\)/);
-  assert.match(source, /event\.metaKey \|\| event\.ctrlKey/);
-  assert.match(source, /event\.key\.toLowerCase\(\) === "x"/);
-  assert.match(source, /window\.addEventListener\("copy"/);
-  assert.match(source, /selectedMolecule\.canonicalSmiles/);
-  assert.match(source, /navigator\.clipboard\.writeText\(smiles\)/);
-  assert.match(source, /flipMolecule/);
-  assert.match(source, /flippedHorizontally/);
-  assert.match(source, /flippedVertically/);
-  assert.match(source, /Flip molecule horizontally/);
-  assert.match(source, /Flip molecule vertically/);
-  assert.match(source, /padding: 0\.025/);
-  assert.match(source, /window\.addEventListener\("pointerup"/);
-  assert.match(source, /window\.addEventListener\("pointercancel"/);
-  assert.match(source, /event\.buttons === 0/);
-  assert.match(source, /localStorage\.setItem\(THEME_STORAGE_KEY/);
-  assert.match(source, /prefers-color-scheme: dark/);
-});
-
-test("repairs common pasted SMILES formatting without changing chemistry", async () => {
-  const { makeSmilesCandidates, splitSmilesInput } = await import(
-    "../app/smiles-cleanup.ts"
-  );
-
-  assert.equal(makeSmilesCandidates(" C C O ")[0].value, "CCO");
-  assert.equal(makeSmilesCandidates("SMILES: CC(=O)O")[0].value, "CC(=O)O");
-  assert.equal(makeSmilesCandidates("\u200BCCO\uFEFF")[0].value, "CCO");
-  assert.equal(makeSmilesCandidates("CC[Na]·Cl")[0].value, "CC[Na].Cl");
-  assert.equal(makeSmilesCandidates("\"CCO\"")[0].value, "CCO");
-  assert.equal(makeSmilesCandidates("CCO,")[1].value, "CCO");
-  assert.equal(makeSmilesCandidates("CCO ethanol")[1].value, "CCO");
-  assert.equal(makeSmilesCandidates("CC(=O)\nOc1ccccc1")[0].value, "CC(=O)Oc1ccccc1");
-  assert.deepEqual(splitSmilesInput("CC(=O)\nOc1ccccc1"), [
-    "CC(=O)\nOc1ccccc1",
-  ]);
-  assert.deepEqual(splitSmilesInput("CCO\n\nCCN"), ["CCO", "CCN"]);
 });

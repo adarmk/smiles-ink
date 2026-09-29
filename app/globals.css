@@ -432,6 +432,14 @@ button {
   stroke-dasharray: 1.5 2;
 }
 
+.selection-toolbar .stereo-button {
+  width: 32px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 .selection-toolbar .delete-button:hover {
   background: #fff0ee;
   color: var(--red);
