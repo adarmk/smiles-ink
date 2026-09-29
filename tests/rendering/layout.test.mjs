@@ -110,11 +110,19 @@ describe("hard molecules don't regress", () => {
       "levorphanol",
       "dextromethorphan",
       "bivalent naltrexamine-PEG",
+      "bivalent morphinan-quinoline/naltrindole",
     ]) {
       const { score, strategy } = layout(HARD.find(([n]) => n === name)[1]);
       assert.ok(strategy.startsWith("template:"), `${name} used ${strategy}`);
       assert.equal(score.overlaps, 0, name);
       assert.equal(score.atomOnBond, 0, name);
+    }
+  });
+
+  test("linkers and fused rings outside the scaffold keep ideal bond angles", () => {
+    // Scaffolds are assembled as rigid pieces, so nothing around them is bent.
+    for (const [name, smiles] of HARD) {
+      assert.ok(layout(smiles).score.angleStrain <= 0.5, name);
     }
   });
 

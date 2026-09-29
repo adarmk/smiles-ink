@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { fitTemplate, flipSubstituents, repairLayout } from "../../app/lib/layout/refine.ts";
+import {
+  assembleScaffolds,
+  fitTemplate,
+  flipSubstituents,
+  repairLayout,
+} from "../../app/lib/layout/refine.ts";
 import {
   findRings,
   parseMolblock,
@@ -58,6 +63,32 @@ describe("scoreLayout", () => {
       bonds: [...ringBonds, bond(0, 6)],
     };
     assert.equal(scoreLayout(layout).substituentsInRings, 1);
+  });
+
+  test("zigzag chains at 120° have no angle strain; bent ones do", () => {
+    const chain = (degrees) => {
+      const turn = (degrees * Math.PI) / 180;
+      const atoms = [atom(0, 0), atom(1, 0)];
+      // Alternate the turn direction so the chain zigzags.
+      let heading = 0;
+      for (let i = 2; i < 6; i++) {
+        heading += (i % 2 ? 1 : -1) * (Math.PI - turn);
+        const last = atoms[i - 1];
+        atoms.push(atom(last.x + Math.cos(heading), last.y + Math.sin(heading)));
+      }
+      return { atoms, bonds: [0, 1, 2, 3, 4].map((i) => bond(i, i + 1)) };
+    };
+    assert.equal(scoreLayout(chain(120)).angleStrain, 0);
+    assert.ok(scoreLayout(chain(90)).angleStrain > 1);
+  });
+
+  test("ring atoms are measured against the ring's own angle", () => {
+    // A regular hexagon with an outward substituent is ideal everywhere.
+    const layout = {
+      atoms: [...hexagon(), atom(2, 0)],
+      bonds: [...ringBonds, bond(0, 6)],
+    };
+    assert.equal(scoreLayout(layout).angleStrain, 0);
   });
 
   test("allows straight triple bonds but flags straight single bonds", () => {
@@ -129,5 +160,34 @@ describe("refinement", () => {
       assert.ok(Math.abs(point.x - target[i].x) < 1e-9);
       assert.ok(Math.abs(point.y - target[i].y) < 1e-9);
     });
+  });
+
+  test("assembleScaffolds snaps the scaffold without bending the rest", () => {
+    // A squashed ring (the "scaffold") with a zigzag chain on atom 0.
+    const squashed = hexagon().map(({ x, y }) => atom(x, y * 0.5));
+    const chain = [atom(2, 0), atom(2.5, 0.866), atom(3.5, 0.866)];
+    const layout = {
+      atoms: [...squashed, ...chain],
+      bonds: [...ringBonds, bond(0, 6), bond(6, 7), bond(7, 8)],
+    };
+    const template = hexagon().map(({ x, y }) => ({ x, y }));
+    const { layout: result } = assembleScaffolds(layout, [
+      { atoms: [0, 1, 2, 3, 4, 5], points: template },
+    ]);
+    const d = (i, j) => Math.hypot(
+      result.atoms[i].x - result.atoms[j].x,
+      result.atoms[i].y - result.atoms[j].y,
+    );
+    const close = (actual, expected, message) =>
+      assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: ${actual} vs ${expected}`);
+
+    // Scaffold takes the template's shape.
+    close(d(0, 3), 2, "ring diameter");
+    // The chain keeps its own shape exactly.
+    close(d(6, 8), Math.hypot(1.5, 0.866), "chain 1–3 distance");
+    // And hangs off the ring at an ideal bond length and angle.
+    // (The squashed ring shortens the layout's median bond very slightly.)
+    assert.ok(Math.abs(d(0, 6) - 1) < 1e-3, "attachment bond");
+    assert.equal(scoreLayout(result).angleStrain, 0);
   });
 });

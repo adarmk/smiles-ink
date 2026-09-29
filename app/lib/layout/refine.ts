@@ -6,10 +6,8 @@ import {
   findRings,
   medianBondLength,
   pairKey,
-  pointInPolygon,
   ringBondKeys,
   scoreLayout,
-  segmentsCross,
   type Layout,
   type LayoutScore,
   type Point,
@@ -215,41 +213,6 @@ export function repairLayout(layout: Layout): ScoredLayout {
   return best;
 }
 
-/**
- * Least-squares rigid fit (rotation, optional reflection, translation; no
- * scaling) of template points P onto target points Q.
- */
-export function fitTemplate(P: Point[], Q: Point[]): Point[] {
-  const centroid = (points: Point[]) => ({
-    x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
-    y: points.reduce((sum, p) => sum + p.y, 0) / points.length,
-  });
-  const cp = centroid(P);
-  const cq = centroid(Q);
-  let best: { points: Point[]; error: number } | null = null;
-  for (const reflection of [1, -1]) {
-    const centered = P.map((p) => ({ x: p.x - cp.x, y: reflection * (p.y - cp.y) }));
-    let sxx = 0;
-    let sxy = 0;
-    centered.forEach((p, i) => {
-      const qx = Q[i].x - cq.x;
-      const qy = Q[i].y - cq.y;
-      sxx += p.x * qx + p.y * qy;
-      sxy += p.x * qy - p.y * qx;
-    });
-    const theta = Math.atan2(sxy, sxx);
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const points = centered.map((p) => ({
-      x: cos * p.x - sin * p.y + cq.x,
-      y: sin * p.x + cos * p.y + cq.y,
-    }));
-    const error = points.reduce((sum, p, i) => sum + distance(p, Q[i]) ** 2, 0);
-    if (!best || error < best.error) best = { points, error };
-  }
-  return best!.points;
-}
-
 const MAX_BRIDGE_ATOMS = 4;
 const BRIDGE_BULGES = [0.25, 0.5, 0.8, 1.2, 1.7];
 
@@ -384,131 +347,259 @@ function placeBridges(layout: Layout, scaffold: Set<number>) {
   return placedAtoms;
 }
 
+export type ScaffoldPlacement = {
+  /** Layout atom indices, in template order. */
+  atoms: number[];
+  /** Template coordinates, scaled to the layout's bond length. */
+  points: Point[];
+};
+
+/** A group of atoms moved as one: a scaffold in its template shape, or any
+ * other connected part in its original (usually CoordGen) shape. */
+type RigidBody = { atoms: number[]; local: Map<number, Point>; isScaffold: boolean };
+
+const SWING_ANGLES = [0, 15, -15, 30, -30].map((degrees) => (degrees * Math.PI) / 180);
+
+const vectorAt = (angle: number): Point => ({ x: Math.cos(angle), y: Math.sin(angle) });
+const angleOf = (v: Point) => Math.atan2(v.y, v.x);
+
+function rotateAbout(v: Point, angle: number): Point {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: v.x * cos - v.y * sin, y: v.x * sin + v.y * cos };
+}
+
+/** Mirror v across the line through the origin along unit vector u. */
+function reflect(v: Point, u: Point): Point {
+  const dot = v.x * u.x + v.y * u.y;
+  return { x: 2 * dot * u.x - v.x, y: 2 * dot * u.y - v.y };
+}
+
 /**
- * Snap every match of a scaffold template onto the layout, re-attach acyclic
- * substituents in the emptiest direction, then relax the rest with the
- * scaffolds frozen. `template` must use the same bond length as `layout`;
- * each match lists layout atom indices in template atom order.
+ * Directions for a new bond from `center`: bisecting the widest gap between
+ * its existing bonds, or ±120° from a single existing bond.
  */
-export function snapTemplates(
+function openDirections(center: Point, bonded: Point[]): Point[] {
+  if (!bonded.length) return [{ x: 1, y: 0 }];
+  const angles = bonded
+    .map((p) => Math.atan2(p.y - center.y, p.x - center.x))
+    .sort((a, b) => a - b);
+  if (angles.length === 1) {
+    return [vectorAt(angles[0] + (2 * Math.PI) / 3), vectorAt(angles[0] - (2 * Math.PI) / 3)];
+  }
+  let widest = -1;
+  let bisector = 0;
+  angles.forEach((angle, i) => {
+    const next = i + 1 < angles.length ? angles[i + 1] : angles[0] + 2 * Math.PI;
+    if (next - angle > widest) {
+      widest = next - angle;
+      bisector = angle + widest / 2;
+    }
+  });
+  return [vectorAt(bisector)];
+}
+
+/** Least-squares rigid transform (rotation + translation, optionally mirrored) taking P onto Q. */
+function rigidTransform(P: Point[], Q: Point[], mirrored: boolean) {
+  const centroid = (points: Point[]) => ({
+    x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+    y: points.reduce((sum, p) => sum + p.y, 0) / points.length,
+  });
+  const cp = centroid(P);
+  const cq = centroid(Q);
+  const flip = mirrored ? -1 : 1;
+  let sxx = 0;
+  let sxy = 0;
+  P.forEach((p, i) => {
+    const px = p.x - cp.x;
+    const py = flip * (p.y - cp.y);
+    const qx = Q[i].x - cq.x;
+    const qy = Q[i].y - cq.y;
+    sxx += px * qx + py * qy;
+    sxy += px * qy - py * qx;
+  });
+  const theta = Math.atan2(sxy, sxx);
+  return (p: Point): Point => {
+    const rotated = rotateAbout({ x: p.x - cp.x, y: flip * (p.y - cp.y) }, theta);
+    return { x: rotated.x + cq.x, y: rotated.y + cq.y };
+  };
+}
+
+/**
+ * Least-squares rigid fit (rotation, optional reflection, translation; no
+ * scaling) of template points P onto target points Q.
+ */
+export function fitTemplate(P: Point[], Q: Point[]): Point[] {
+  let best: { points: Point[]; error: number } | null = null;
+  for (const mirrored of [false, true]) {
+    const transform = rigidTransform(P, Q, mirrored);
+    const points = P.map(transform);
+    const error = points.reduce((sum, p, i) => sum + distance(p, Q[i]) ** 2, 0);
+    if (!best || error < best.error) best = { points, error };
+  }
+  return best!.points;
+}
+
+/**
+ * Lay a molecule out from rigid pieces: each scaffold match keeps its
+ * template shape and every other connected part keeps its shape from
+ * `layout` (whose chains and rings are already well drawn). Starting from
+ * the first scaffold, each neighbouring piece is attached along an ideal bond
+ * direction, or fitted onto the atoms it shares a ring with, trying mirrored
+ * and slightly rotated placements and keeping the one with fewest defects.
+ * Nothing is bent, so bond lengths and angles inside every piece survive.
+ */
+export function assembleScaffolds(
   layout: Layout,
-  template: Point[],
-  matches: number[][],
+  scaffolds: ScaffoldPlacement[],
 ): ScoredLayout {
-  const out = cloneLayout(layout);
   const n = layout.atoms.length;
-  const fixed = new Set<number>();
   const neighbors = adjacency(n, layout.bonds);
-  const ringBonds = ringBondKeys(n, layout.bonds);
-  const allMatched = new Set(matches.flat());
   const unit = medianBondLength(layout);
-  const rings = findRings(n, layout.bonds, 8);
 
-  for (const match of matches) {
-    const original = out.atoms.map((atom) => ({ ...atom }));
-    const fitted = fitTemplate(template, match.map((i) => out.atoms[i]));
-    match.forEach((atom, k) => {
-      out.atoms[atom].x = fitted[k].x;
-      out.atoms[atom].y = fitted[k].y;
-      fixed.add(atom);
+  const bodyOf: number[] = new Array(n).fill(-1);
+  const bodies: RigidBody[] = [];
+  for (const { atoms, points } of scaffolds) {
+    atoms.forEach((atom) => (bodyOf[atom] = bodies.length));
+    bodies.push({
+      atoms,
+      local: new Map(atoms.map((atom, k) => [atom, points[k]])),
+      isScaffold: true,
     });
-
-    const inMatch = new Set(match);
-    const matchRings = rings.filter((ring) => ring.every((i) => inMatch.has(i)));
-    const placed = new Set(match);
-
-    for (const anchor of match) {
-      const substituents = neighbors[anchor].filter(
-        (s) => !inMatch.has(s) && !ringBonds.has(pairKey(anchor, s)),
-      );
-      if (!substituents.length) continue;
-
-      // Default direction: away from the anchor's scaffold neighbours.
-      let fx = 0;
-      let fy = 0;
-      for (const v of neighbors[anchor].filter((v) => inMatch.has(v))) {
-        const dx = out.atoms[v].x - out.atoms[anchor].x;
-        const dy = out.atoms[v].y - out.atoms[anchor].y;
-        const d = Math.hypot(dx, dy) || 1;
-        fx -= dx / d;
-        fy -= dy / d;
-      }
-      const base =
-        Math.hypot(fx, fy) < 1e-3
-          ? Math.atan2(
-              original[substituents[0]].y - original[anchor].y,
-              original[substituents[0]].x - original[anchor].x,
-            )
-          : Math.atan2(fy, fx);
-
-      for (const substituent of substituents) {
-        const side = subtree(neighbors, substituent, anchor);
-        // Leads to another scaffold copy (e.g. a bivalent ligand): leave it to relax.
-        if (side.some((i) => allMatched.has(i))) continue;
-
-        // Scan 24 directions for the most clearance, avoiding crossings and ring interiors.
-        let angle = base;
-        let bestClearance = -Infinity;
-        for (let t = 0; t < 24; t++) {
-          const theta = base + (t % 2 ? 1 : -1) * Math.ceil(t / 2) * (Math.PI / 12);
-          const tip = {
-            x: out.atoms[anchor].x + unit * Math.cos(theta),
-            y: out.atoms[anchor].y + unit * Math.sin(theta),
-          };
-          let clearance = Infinity;
-          for (const i of placed) {
-            if (i !== anchor) clearance = Math.min(clearance, distance(out.atoms[i], tip));
-          }
-          const crosses = layout.bonds.some(
-            (bond) =>
-              placed.has(bond.a) &&
-              placed.has(bond.b) &&
-              bond.a !== anchor &&
-              bond.b !== anchor &&
-              segmentsCross(out.atoms[anchor], tip, out.atoms[bond.a], out.atoms[bond.b]),
-          );
-          if (crosses) clearance -= 10;
-          if (matchRings.some((ring) => pointInPolygon(tip, ring.map((i) => out.atoms[i])))) {
-            clearance -= 5;
-          }
-          if (clearance > bestClearance + 0.05 * unit) {
-            bestClearance = clearance;
-            angle = theta;
-          }
-        }
-        placed.add(substituent);
-
-        // Move the whole substituent rigidly so its first atom lies along `angle`.
-        const rotation =
-          angle -
-          Math.atan2(
-            original[substituent].y - original[anchor].y,
-            original[substituent].x - original[anchor].x,
-          );
-        const cos = Math.cos(rotation);
-        const sin = Math.sin(rotation);
-        const startX = out.atoms[anchor].x + unit * Math.cos(angle);
-        const startY = out.atoms[anchor].y + unit * Math.sin(angle);
-        for (const i of side) {
-          const px = original[i].x - original[substituent].x;
-          const py = original[i].y - original[substituent].y;
-          out.atoms[i].x = startX + cos * px - sin * py;
-          out.atoms[i].y = startY + sin * px + cos * py;
+  }
+  for (let start = 0; start < n; start++) {
+    if (bodyOf[start] !== -1) continue;
+    const id = bodies.length;
+    const atoms = [start];
+    bodyOf[start] = id;
+    for (let i = 0; i < atoms.length; i++) {
+      for (const next of neighbors[atoms[i]]) {
+        if (bodyOf[next] === -1) {
+          bodyOf[next] = id;
+          atoms.push(next);
         }
       }
     }
+    bodies.push({
+      atoms,
+      local: new Map(atoms.map((atom) => [atom, layout.atoms[atom]])),
+      isScaffold: false,
+    });
   }
 
-  for (const atom of placeBridges(out, allMatched)) fixed.add(atom);
+  const position: (Point | null)[] = new Array(n).fill(null);
 
-  let best: ScoredLayout = { layout: out, score: scoreLayout(out) };
-  const flipped = flipSubstituents(out);
-  best = better(best, flipped);
-  const relaxed = relax(flipped.layout, { fixed, iterations: 300 });
-  best = better(best, relaxed);
-  const reflipped = flipSubstituents(relaxed.layout);
-  best = better(best, reflipped);
-  // A brief unfrozen polish.
-  best = better(best, relax(reflipped.layout, { iterations: 150, step: 0.02 }));
-  return best;
+  const scorePlaced = () => {
+    const index = new Map<number, number>();
+    const atoms: Layout["atoms"] = [];
+    position.forEach((p, atom) => {
+      if (!p) return;
+      index.set(atom, atoms.length);
+      atoms.push({ ...layout.atoms[atom], x: p.x, y: p.y });
+    });
+    const bonds = layout.bonds
+      .filter(({ a, b }) => index.has(a) && index.has(b))
+      .map((bond) => ({ ...bond, a: index.get(bond.a)!, b: index.get(bond.b)! }));
+    return scoreLayout({ atoms, bonds }).score;
+  };
+
+  /** Try each placement of a body and keep the lowest-scoring one. */
+  const placeBest = (body: RigidBody, placements: ((p: Point) => Point)[]) => {
+    let best: { score: number; placement: (p: Point) => Point } | null = null;
+    for (const placement of placements) {
+      for (const atom of body.atoms) position[atom] = placement(body.local.get(atom)!);
+      const score = scorePlaced();
+      if (!best || score < best.score) best = { score, placement };
+    }
+    for (const atom of body.atoms) position[atom] = best!.placement(body.local.get(atom)!);
+  };
+
+  /** Placements hanging a body off one bond p–x, with p already placed. */
+  const bondPlacements = (body: RigidBody, p: number, x: number) => {
+    const anchor = position[p]!;
+    const placedAround = neighbors[p].flatMap((q) => (position[q] ? [position[q]!] : []));
+    const origin = body.local.get(x)!;
+    // Direction from x back towards p in the body's own frame.
+    const towardsP = body.isScaffold
+      ? openDirections(
+          origin,
+          neighbors[x].flatMap((q) => (body.local.has(q) ? [body.local.get(q)!] : [])),
+        )
+      : [(() => {
+          const d = distance(origin, layout.atoms[p]) || 1;
+          return {
+            x: (layout.atoms[p].x - origin.x) / d,
+            y: (layout.atoms[p].y - origin.y) / d,
+          };
+        })()];
+
+    const placements: ((q: Point) => Point)[] = [];
+    for (const out of openDirections(anchor, placedAround)) {
+      for (const swing of SWING_ANGLES) {
+        const direction = rotateAbout(out, swing);
+        const target = { x: anchor.x + unit * direction.x, y: anchor.y + unit * direction.y };
+        for (const back of towardsP) {
+          const theta = angleOf({ x: -direction.x, y: -direction.y }) - angleOf(back);
+          for (const mirrored of [false, true]) {
+            placements.push((q) => {
+              let relative = { x: q.x - origin.x, y: q.y - origin.y };
+              if (mirrored) relative = reflect(relative, back);
+              const rotated = rotateAbout(relative, theta);
+              return { x: target.x + rotated.x, y: target.y + rotated.y };
+            });
+          }
+        }
+      }
+    }
+    return placements;
+  };
+
+  // The first scaffold goes where the original layout roughly put it.
+  const root = bodies[0];
+  const rootPoints = fitTemplate(
+    root.atoms.map((atom) => root.local.get(atom)!),
+    root.atoms.map((atom) => layout.atoms[atom]),
+  );
+  root.atoms.forEach((atom, k) => (position[atom] = rootPoints[k]));
+
+  const placed = new Set([0]);
+  const queue = [0];
+  while (queue.length) {
+    const current = queue.shift()!;
+    const links = new Map<number, [number, number][]>();
+    for (const p of bodies[current].atoms) {
+      for (const x of neighbors[p]) {
+        const id = bodyOf[x];
+        if (placed.has(id)) continue;
+        links.set(id, [...(links.get(id) ?? []), [p, x]]);
+      }
+    }
+    for (const [id, attachments] of links) {
+      const body = bodies[id];
+      const anchors = [...new Set(attachments.map(([p]) => p))];
+      if (anchors.length >= 2 && !body.isScaffold) {
+        // Fused or bridging: fit the body onto the placed atoms it bonds to,
+        // using where those atoms were relative to it originally.
+        const from = anchors.map((p) => layout.atoms[p]);
+        const to = anchors.map((p) => position[p]!);
+        placeBest(body, [false, true].map((mirrored) => rigidTransform(from, to, mirrored)));
+      } else {
+        const [p, x] = attachments[0];
+        placeBest(body, bondPlacements(body, p, x));
+      }
+      placed.add(id);
+      queue.push(id);
+    }
+  }
+
+  const out = cloneLayout(layout);
+  position.forEach((p, atom) => {
+    if (!p) return; // Another fragment (e.g. a counter-ion): keep it as drawn.
+    out.atoms[atom].x = p.x;
+    out.atoms[atom].y = p.y;
+  });
+  placeBridges(out, new Set(scaffolds.flatMap(({ atoms }) => atoms)));
+
+  // Rigid flips only: they tidy collisions without bending anything.
+  return better({ layout: out, score: scoreLayout(out) }, flipSubstituents(out));
 }

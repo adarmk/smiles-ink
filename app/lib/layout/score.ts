@@ -18,6 +18,8 @@ export type LayoutScore = {
   ringPenalty: number;
   linear: number;
   substituentsInRings: number;
+  /** Summed bond-angle deviation beyond a tolerance, in units of 30°. */
+  angleStrain: number;
 };
 
 export const SCORE_WEIGHTS = {
@@ -29,6 +31,7 @@ export const SCORE_WEIGHTS = {
   ring: 2,
   linear: 6,
   substituentInRing: 6,
+  angleStrain: 3,
 };
 
 /** Parse atoms and bonds from a V2000 or V3000 molblock. */
@@ -212,6 +215,7 @@ const EMPTY_SCORE: LayoutScore = {
   ringPenalty: 0,
   linear: 0,
   substituentsInRings: 0,
+  angleStrain: 0,
 };
 
 export function scoreLayout(layout: Layout, weights = SCORE_WEIGHTS): LayoutScore {
@@ -303,6 +307,8 @@ export function scoreLayout(layout: Layout, weights = SCORE_WEIGHTS): LayoutScor
     if (ratio < 0.6) ringPenalty += (0.6 - ratio) / 0.6;
   }
 
+  const angleStrain = measureAngleStrain(layout, rings);
+
   const score =
     weights.crossing * crossings +
     weights.overlap * overlaps +
@@ -311,7 +317,8 @@ export function scoreLayout(layout: Layout, weights = SCORE_WEIGHTS): LayoutScor
     weights.bondLength * (badBondLengths + 10 * bondLengthSpread) +
     weights.ring * ringPenalty +
     weights.linear * linear +
-    weights.substituentInRing * substituentsInRings;
+    weights.substituentInRing * substituentsInRings +
+    weights.angleStrain * angleStrain;
 
   return {
     score: Math.round(score * 100) / 100,
@@ -324,5 +331,109 @@ export function scoreLayout(layout: Layout, weights = SCORE_WEIGHTS): LayoutScor
     ringPenalty: Math.round(ringPenalty * 100) / 100,
     linear,
     substituentsInRings,
+    angleStrain: Math.round(angleStrain * 100) / 100,
   };
+}
+
+const ANGLE_TOLERANCE = 12;
+
+function angleAt(center: Point, a: Point, b: Point) {
+  const ux = a.x - center.x;
+  const uy = a.y - center.y;
+  const vx = b.x - center.x;
+  const vy = b.y - center.y;
+  const cos = (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy) || 1);
+  return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
+}
+
+/**
+ * How far bond angles stray from what a chemist would draw: 120° in chains,
+ * the regular-polygon angle inside rings, and the matching exocyclic angle.
+ * Bridged rings (sharing three or more atoms with another ring) can't be
+ * drawn with ideal angles at all, so their atoms are skipped, as are
+ * four-connected atoms.
+ */
+function measureAngleStrain(layout: Layout, rings: number[][]) {
+  const { atoms, bonds } = layout;
+  const neighbors: { atom: number; order: number }[][] = atoms.map(() => []);
+  for (const { a, b, order } of bonds) {
+    neighbors[a].push({ atom: b, order });
+    neighbors[b].push({ atom: a, order });
+  }
+  // For each atom, the ring sizes that each neighbour pair borders.
+  const ringAngles = atoms.map(() => new Map<string, number[]>());
+  const ringCount = atoms.map(() => 0);
+  for (const ring of rings) {
+    ring.forEach((atom, t) => {
+      const previous = ring[(t + ring.length - 1) % ring.length];
+      const next = ring[(t + 1) % ring.length];
+      const key = pairKey(previous, next);
+      const sizes = ringAngles[atom].get(key) ?? [];
+      sizes.push(ring.length);
+      ringAngles[atom].set(key, sizes);
+      ringCount[atom]++;
+    });
+  }
+
+  const bridged = new Set<number>();
+  for (let i = 0; i < rings.length; i++) {
+    const members = new Set(rings[i]);
+    for (let k = i + 1; k < rings.length; k++) {
+      if (rings[k].filter((atom) => members.has(atom)).length >= 3) {
+        rings[i].forEach((atom) => bridged.add(atom));
+        rings[k].forEach((atom) => bridged.add(atom));
+      }
+    }
+  }
+
+  let strain = 0;
+  const addDeviation = (actual: number, ideal: number) => {
+    const deviation = Math.abs(actual - ideal);
+    if (deviation > ANGLE_TOLERANCE) strain += (deviation - ANGLE_TOLERANCE) / 30;
+  };
+
+  for (let j = 0; j < atoms.length; j++) {
+    const around = neighbors[j];
+    if (around.length < 2 || around.length > 3 || ringCount[j] > 2 || bridged.has(j)) {
+      continue;
+    }
+
+    if (around.length === 2) {
+      const [first, second] = around;
+      const angle = angleAt(atoms[j], atoms[first.atom], atoms[second.atom]);
+      const sizes = ringAngles[j].get(pairKey(first.atom, second.atom));
+      if (sizes) {
+        if (new Set(sizes).size === 1) addDeviation(angle, 180 - 360 / sizes[0]);
+      } else if (
+        first.order === 3 ||
+        second.order === 3 ||
+        (first.order === 2 && second.order === 2)
+      ) {
+        addDeviation(angle, 180);
+      } else {
+        addDeviation(angle, 120);
+      }
+      continue;
+    }
+
+    // Three neighbours: ring angles are fixed by their rings; the others
+    // share what's left of 360°.
+    const pairs = [
+      [around[0].atom, around[1].atom],
+      [around[0].atom, around[2].atom],
+      [around[1].atom, around[2].atom],
+    ];
+    const ideals = pairs.map(([a, b]) => {
+      const sizes = ringAngles[j].get(pairKey(a, b));
+      return sizes ? (new Set(sizes).size === 1 ? 180 - 360 / sizes[0] : NaN) : null;
+    });
+    if (ideals.some((ideal) => Number.isNaN(ideal))) continue;
+    const fixedTotal = ideals.reduce<number>((sum, ideal) => sum + (ideal ?? 0), 0);
+    const freeCount = ideals.filter((ideal) => ideal === null).length;
+    const freeIdeal = freeCount ? (360 - fixedTotal) / freeCount : 0;
+    pairs.forEach(([a, b], index) => {
+      addDeviation(angleAt(atoms[j], atoms[a], atoms[b]), ideals[index] ?? freeIdeal);
+    });
+  }
+  return strain;
 }

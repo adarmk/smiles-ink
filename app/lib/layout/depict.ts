@@ -13,7 +13,7 @@
 //   5. Flip/relax cleanup of the best raw candidates.
 import type { JSMol, RDKitModule } from "@rdkit/rdkit";
 import { makeSmilesCandidates } from "../../smiles-cleanup.ts";
-import { repairLayout, snapTemplates } from "./refine.ts";
+import { assembleScaffolds, repairLayout } from "./refine.ts";
 import {
   medianBondLength,
   parseMolblock,
@@ -161,25 +161,29 @@ function substructMatches(mol: JSMol, query: JSMol): number[][] {
   return [...unique.values()];
 }
 
+type ScaffoldMatch = { template: LoadedTemplate; atoms: number[] };
+
 /**
- * Ways to snap a template onto non-overlapping matches. Overlapping matches
- * arise when a cage is symmetric (buprenorphine's extra bridge can play the
- * part of either ring), so each seed match yields a different assignment.
+ * Sets of non-overlapping scaffold matches to lay out together. Matches
+ * overlap when templates nest (every epoxymorphinan is also a morphinan) or a
+ * cage is symmetric (buprenorphine's extra bridge can play the part of either
+ * ring), so each seed match yields a different set. Earlier templates are
+ * more specific and win when matches overlap.
  */
-function matchAssignments(matches: number[][], limit = 3): number[][][] {
-  const assignments: number[][][] = [];
+function matchAssignments(matches: ScaffoldMatch[], limit = 3): ScaffoldMatch[][] {
+  const assignments: ScaffoldMatch[][] = [];
   const seen = new Set<string>();
   for (const seed of matches) {
     if (assignments.length >= limit) break;
-    const used = new Set(seed);
+    const used = new Set(seed.atoms);
     const chosen = [seed];
     for (const match of matches) {
-      if (match === seed || match.some((atom) => used.has(atom))) continue;
+      if (match === seed || match.atoms.some((atom) => used.has(atom))) continue;
       chosen.push(match);
-      match.forEach((atom) => used.add(atom));
+      match.atoms.forEach((atom) => used.add(atom));
     }
     const key = chosen
-      .map((match) => [...match].sort((a, b) => a - b).join(","))
+      .map(({ template, atoms }) => `${template.name}:${[...atoms].sort((a, b) => a - b)}`)
       .sort()
       .join("|");
     if (!seen.has(key)) {
@@ -231,40 +235,50 @@ export function layoutMolecule(
 
     const base = parseMol(rdkit, smiles)!;
     try {
-      for (const template of templates) {
-        const matches = substructMatches(base, template.mol);
-        if (!matches.length) continue;
+      const matches: ScaffoldMatch[] = templates.flatMap((template) =>
+        substructMatches(base, template.mol).map((atoms) => ({ template, atoms })),
+      );
 
-        // Only CoordGen's own templates are used when useCoordGen is true, so
-        // align with the native depictor. It aligns one match; snapTemplates
-        // then fits every match, e.g. both halves of a bivalent ligand.
+      // RDKit's own template alignment: clean when it works, but it aligns
+      // only one match and only honours templates in the native depictor.
+      for (const template of new Set(matches.map((match) => match.template))) {
         const aligned = parseMol(rdkit, smiles);
         if (
-          !aligned ||
-          !aligned.generate_aligned_coords(
+          aligned?.generate_aligned_coords(
             template.mol,
             JSON.stringify({ useCoordGen: false, acceptFailure: false }),
           )
         ) {
+          add(aligned, `template:${template.name}:aligned`, true);
+        } else {
           aligned?.delete();
-          continue;
         }
-        const alignedLayout = parseMolblock(aligned.get_molblock());
-        const scale = medianBondLength(alignedLayout) / medianBondLength(template.layout);
-        const templatePoints = template.layout.atoms.map(({ x, y }) => ({
-          x: x * scale,
-          y: y * scale,
-        }));
-        for (const assignment of matchAssignments(matches)) {
-          const snapped = snapTemplates(alignedLayout, templatePoints, assignment);
-          add(
-            withCoordinates(rdkit, aligned, snapped.layout),
-            `template:${template.name}`,
-            true,
-            snapped,
+      }
+
+      // Assemble every match in its template shape, keeping the rest of the
+      // molecule in the shape CoordGen or the native depictor drew it.
+      const rawLayouts = candidates.slice(0, 2).map((candidate) => candidate.layout);
+      for (const assignment of matchAssignments(matches)) {
+        const name = [...new Set(assignment.map((match) => match.template.name))].join("+");
+        rawLayouts.forEach((rawLayout, index) => {
+          const unit = medianBondLength(rawLayout);
+          const assembled = assembleScaffolds(
+            rawLayout,
+            assignment.map(({ template, atoms }) => {
+              const scale = unit / medianBondLength(template.layout);
+              return {
+                atoms,
+                points: template.layout.atoms.map(({ x, y }) => ({ x: x * scale, y: y * scale })),
+              };
+            }),
           );
-        }
-        add(aligned, `template:${template.name}:aligned`, true);
+          add(
+            withCoordinates(rdkit, base, assembled.layout),
+            `template:${name}${index ? ":native" : ""}`,
+            true,
+            assembled,
+          );
+        });
       }
 
       // The native depictor depends on atom order; CoordGen doesn't.
