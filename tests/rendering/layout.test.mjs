@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   createDepicter,
   GOOD_ENOUGH_SCORE,
@@ -19,9 +20,9 @@ let rdkit;
 let templates;
 
 before(async () => {
-  const initRDKitModule = require(new URL("RDKit_minimal.js", rdkitDirectory).pathname);
+  const initRDKitModule = require(fileURLToPath(new URL("RDKit_minimal.js", rdkitDirectory)));
   rdkit = await initRDKitModule({
-    locateFile: () => new URL("RDKit_minimal.wasm", rdkitDirectory).pathname,
+    locateFile: () => fileURLToPath(new URL("RDKit_minimal.wasm", rdkitDirectory)),
   });
   rdkit.prefer_coordgen(true);
   templates = loadTemplates(rdkit);

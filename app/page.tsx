@@ -96,11 +96,12 @@ export default function Home() {
     finishPointerActionRef.current = pointerActions.finishPointerAction;
   }, [pointerActions.finishPointerAction]);
 
-  useCanvasPersistence({
+  const { isInitializing } = useCanvasPersistence({
     molecules,
     setMolecules,
     canvasTransform,
     applyCanvasTransform,
+    showNotice,
   });
 
   useEffect(() => {
@@ -172,7 +173,7 @@ export default function Home() {
   const addSmiles = useCallback(
     async (rawValue: string) => {
       const entries = splitSmilesInput(rawValue);
-      if (!entries.length || isRendering) return;
+      if (!entries.length || isRendering || isInitializing) return;
 
       setIsRendering(true);
       try {
@@ -250,7 +251,7 @@ export default function Home() {
         setIsRendering(false);
       }
     },
-    [canvasTransformRef, isRendering, showNotice],
+    [canvasTransformRef, isInitializing, isRendering, showNotice],
   );
 
   useEffect(() => {
@@ -346,7 +347,7 @@ export default function Home() {
   );
 
   const pasteFromClipboard = useCallback(async () => {
-    if (isRendering || rendererStatus === "error") return;
+    if (isInitializing || isRendering || rendererStatus === "error") return;
     try {
       const pasted = (await navigator.clipboard.readText()).trim();
       if (!pasted) {
@@ -357,7 +358,7 @@ export default function Home() {
     } catch {
       showNotice("Allow clipboard access, then try Paste again.", "error");
     }
-  }, [addSmiles, isRendering, rendererStatus, showNotice]);
+  }, [addSmiles, isInitializing, isRendering, rendererStatus, showNotice]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -471,14 +472,14 @@ export default function Home() {
         onChange={setInput}
         onSubmit={(value) => void addSmiles(value)}
         isRendering={isRendering}
-        isDisabled={isRendererUnavailable}
+        isDisabled={isInitializing || isRendererUnavailable}
       />
 
       <MobileActionDock
         onPaste={() => void pasteFromClipboard()}
         onClear={clearCanvas}
         isRendering={isRendering}
-        isPasteDisabled={isRendering || isRendererUnavailable}
+        isPasteDisabled={isInitializing || isRendering || isRendererUnavailable}
         isClearDisabled={molecules.length === 0}
       />
 

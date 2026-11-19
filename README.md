@@ -14,9 +14,43 @@ A private, local-first canvas for turning SMILES strings into publication-qualit
 - Clear the canvas from the desktop header, with `⌘X` or `Ctrl+X`, or from the compact mobile controls.
 - Rejoins a SMILES string that was wrapped across several lines. To paste several different molecules at once, separate them with a blank line.
 - Saves the canvas in your browser (`localStorage`) so it survives a reload. Molecules are stored as SMILES plus layout and re-rendered on load.
-- Sends no molecule data to a server. The RDKit WebAssembly engine is served from `public/rdkit` and runs in the browser.
+- Renders molecules locally: the RDKit WebAssembly engine is served from `public/rdkit` and runs in the browser. Pasted molecules are not sent to a server; URL imports have the privacy caveats below.
 
 Cleanup is deliberately conservative: smiles.ink only tries mechanical repairs that do not invent atoms, bonds, branches, charges, or stereochemistry.
+
+## Load a canvas from a URL
+
+Supply a single `molecules` query parameter containing a URL-encoded JSON array.
+Each object requires `smiles`, `x`, `y`, `width`, and `height`:
+
+```js
+const url = new URL("https://smiles.ink/");
+url.searchParams.set("molecules", JSON.stringify([
+  { smiles: "CCO", x: 40, y: 60, width: 300, height: 200 },
+  { smiles: "c1ccccc1", x: 380, y: 60, width: 240, height: 240 },
+]));
+console.log(url.href);
+```
+
+- Coordinates specify the **top-left corner**, in CSS pixels relative to the
+  canvas (below the header). Width and height specify the molecule's drawing box.
+- All molecules are rendered before the existing canvas is replaced. The view
+  resets to 100% zoom at the origin; sizes and coordinates are not auto-fitted.
+  Array order determines layering, with the last molecule on top.
+- A valid URL takes priority over the browser's saved canvas and becomes the new
+  saved canvas. `?molecules=%5B%5D` explicitly clears it. Without `molecules`,
+  normal restore behavior is unchanged.
+- Invalid JSON, missing fields, invalid SMILES, or rendering failures reject the
+  whole import and leave the saved canvas intact.
+- Limits: 100 molecules, 64,000 characters of decoded JSON, coordinates between
+  −1,000,000 and 1,000,000, and dimensions greater than 0 and at most 10,000.
+  Browsers and hosting services may impose shorter URL limits.
+- Always use `URLSearchParams` or `encodeURIComponent(JSON.stringify(...))`;
+  unescaped `+`, `#`, `%`, and backslashes can corrupt SMILES.
+- Imports run when the page loads. Reloading the same URL reapplies its snapshot;
+  remove the query parameter to reload subsequent saved edits instead.
+- Unlike ordinary local-only editing, SMILES in a query URL can appear in browser
+  history, shared links, and hosting access logs. Avoid this for sensitive data.
 
 ## Run locally
 

@@ -5,15 +5,16 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { getCanvasBounds } from "../lib/dom";
-import { fitBoxToBounds } from "../lib/geometry";
+import { parseCanvasUrl, renderCanvasUrl } from "../lib/canvas-url";
+import { getCanvasBounds, makeId } from "../lib/dom";
+import { fitBoxToBounds, INITIAL_CANVAS_TRANSFORM } from "../lib/geometry";
 import {
   CANVAS_STORAGE_KEY,
   parseSavedCanvas,
   serializeCanvas,
 } from "../lib/persistence";
 import { renderSmiles, whenRendererReady } from "../lib/renderer";
-import type { CanvasTransform, MoleculeItem } from "../lib/types";
+import type { CanvasTransform, MoleculeItem, NoticeTone } from "../lib/types";
 
 const SAVE_DELAY_MS = 250;
 
@@ -22,6 +23,7 @@ type Options = {
   setMolecules: Dispatch<SetStateAction<MoleculeItem[]>>;
   canvasTransform: CanvasTransform;
   applyCanvasTransform: (transform: CanvasTransform) => void;
+  showNotice: (message: string, tone?: NoticeTone) => void;
 };
 
 function readStorage() {
@@ -42,16 +44,19 @@ function writeStorage(value: string) {
 
 /**
  * Keep the canvas in localStorage so it survives reloads. Saved molecules are
- * re-rendered from SMILES once the renderer is ready. Nothing is written until the
- * restore has run, so a failed load never overwrites a saved canvas.
+ * re-rendered from SMILES once the renderer is ready. A valid URL snapshot takes
+ * precedence over storage and is committed atomically, without fitting its boxes.
+ * Nothing is written until initialization completes successfully.
  */
 export function useCanvasPersistence({
   molecules,
   setMolecules,
   canvasTransform,
   applyCanvasTransform,
+  showNotice,
 }: Options) {
   const [isRestored, setIsRestored] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const moleculeCountRef = useRef(molecules.length);
   useEffect(() => {
     moleculeCountRef.current = molecules.length;
@@ -63,6 +68,23 @@ export function useCanvasPersistence({
     const restore = async () => {
       await whenRendererReady();
       if (cancelled) return;
+      try {
+        const entries = parseCanvasUrl(window.location.search);
+        if (entries !== null) {
+          const imported = await renderCanvasUrl(entries, renderSmiles, makeId);
+          if (cancelled) return;
+          applyCanvasTransform(INITIAL_CANVAS_TRANSFORM);
+          setMolecules(imported);
+          setIsRestored(true);
+          showNotice(imported.length
+            ? `${imported.length} molecule${imported.length === 1 ? "" : "s"} loaded from URL`
+            : "Empty canvas loaded from URL");
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        showNotice("Could not load the canvas URL. Your saved canvas has been kept.", "error");
+      }
       const saved = parseSavedCanvas(readStorage());
       if (saved?.molecules.length) {
         const rendered = await Promise.all(
@@ -113,12 +135,14 @@ export function useCanvasPersistence({
 
     // If the renderer can't start, the page reports it; the saved canvas is
     // left untouched because saving only begins after a restore.
-    restore().catch(() => {});
+    restore().catch(() => {}).finally(() => {
+      if (!cancelled) setIsInitializing(false);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [applyCanvasTransform, setMolecules]);
+  }, [applyCanvasTransform, setMolecules, showNotice]);
 
   const latestRef = useRef<string | null>(null);
 
@@ -143,4 +167,6 @@ export function useCanvasPersistence({
       flush();
     };
   }, []);
+
+  return { isInitializing };
 }
